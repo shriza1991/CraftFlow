@@ -202,37 +202,47 @@ Interactive API documentation:
 
 ---
 
-## 8. API Endpoints (P0 Foundation)
+## 8. API Endpoints (P0 Foundation & P1 Business Domain)
 
 | Endpoint | Method | Purpose | Requires DB |
 |---|---|---|---|
 | `/api/v1/health` | GET | Liveness probe returning service and version | No |
 | `/api/v1/readiness` | GET | Readiness probe checking PostgreSQL connectivity | Yes |
+| `/api/v1/products` | GET, POST | List catalog products (paginated) / create product with variants | Yes |
+| `/api/v1/products/{id}` | GET, PATCH | Retrieve product details / update attributes | Yes |
+| `/api/v1/customers` | GET, POST | List / create customer (normalized & deduplicated) | Yes |
+| `/api/v1/customers/{id}` | GET, PATCH | Retrieve / update customer profile | Yes |
+| `/api/v1/leads` | GET, POST | List / create sales leads linked to products | Yes |
+| `/api/v1/leads/{id}` | GET, PATCH | Retrieve lead / update status with state transitions | Yes |
+| `/api/v1/conversations` | POST | Open multi-channel interaction session | Yes |
+| `/api/v1/conversations/{id}` | GET | Retrieve conversation session with messages | Yes |
+| `/api/v1/conversations/{id}/messages` | GET, POST | List messages chronologically / append message | Yes |
+| `/api/v1/followups` | GET, POST | List scheduled follow-ups / schedule new follow-up | Yes |
+| `/api/v1/followups/{id}` | PATCH | Update follow-up status (e.g. mark completed) | Yes |
 
-Sample Health Check Response:
-```json
-{
-  "status": "ok",
-  "service": "ai-business-automation",
-  "version": "0.1.0"
-}
-```
+---
 
-Sample Readiness Check Response:
-```json
-{
-  "status": "ready",
-  "dependencies": {
-    "database": "healthy"
-  }
-}
+## 9. Database Seeding & Development Fixtures
+
+Populate the database with realistic synthetic luxury bathtub catalog, customer, lead, conversation, follow-up, agent run, and audit log data:
+
+```bash
+# Seed development database
+python -m app.scripts.seed
+# Or via make:
+make seed
+
+# Reset and re-seed from scratch:
+python -m app.scripts.seed --reset
+# Or via make:
+make seed-reset
 ```
 
 ---
 
-## 9. Running Tests & Quality Verification
+## 10. Running Tests & Quality Verification
 
-Run the entire offline test suite:
+Run the entire test suite (unit + real database integration tests):
 ```bash
 pytest -v backend/tests
 ```
@@ -249,10 +259,10 @@ python -m compileall backend
 
 ---
 
-## 10. Roadmap & Milestones
+## 11. Roadmap & Milestones
 
-- **[x] P0 — Project Foundation & Architecture** *(Current)*
-- **[ ] P1 — Business Data Foundation** (SQLAlchemy models for Bathtubs, Customers, Leads)
+- **[x] P0 — Project Foundation & Architecture** *(Complete)*
+- **[x] P1 — Business Data Foundation & Domain Model** *(Complete)*
 - **[ ] P2 — Knowledge Base & pgvector RAG** (Vector ingestion & semantic search)
 - **[ ] P3 — Core Agent Orchestrator** (LangGraph state machine & router)
 - **[ ] P4 — WhatsApp & Omnichannel Communication** (Meta Cloud API & webhook security)

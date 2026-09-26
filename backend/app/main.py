@@ -107,12 +107,11 @@ def create_application() -> FastAPI:
             )
             return response
         except Exception:
-            request_id_ctx.reset(token)
             raise
         finally:
             try:
                 request_id_ctx.reset(token)
-            except ValueError:
+            except (ValueError, RuntimeError):
                 pass
 
     # --------------------------------------------------------------------------
@@ -135,7 +134,7 @@ def create_application() -> FastAPI:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content=payload.model_dump(),
+            content=payload.model_dump(mode="json"),
             headers={"X-Request-ID": req_id},
         )
 
@@ -158,7 +157,7 @@ def create_application() -> FastAPI:
         )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=payload.model_dump(),
+            content=payload.model_dump(mode="json"),
             headers={"X-Request-ID": req_id},
         )
 
@@ -182,7 +181,7 @@ def create_application() -> FastAPI:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content=payload.model_dump(),
+            content=payload.model_dump(mode="json"),
             headers={"X-Request-ID": req_id},
         )
 
@@ -204,7 +203,7 @@ def create_application() -> FastAPI:
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=payload.model_dump(),
+            content=payload.model_dump(mode="json"),
             headers={"X-Request-ID": req_id},
         )
 

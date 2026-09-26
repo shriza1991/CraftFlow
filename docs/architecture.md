@@ -99,3 +99,63 @@ WhatsApp Inbound Webhook (X-Request-ID: req_01j8...)
                           └─► Outbound WhatsApp Notification
 ```
 All log entries are structured JSON containing `timestamp`, `level`, `service`, `request_id`, `event`, and `message`.
+
+---
+
+## 4. P1 — Business Data Foundation & Domain Model
+
+Milestone P1 establishes PostgreSQL as the deterministic business source of truth for CraftFlow. The Large Language Model (LLM) is strictly prevented from directly modifying the database or executing raw SQL. All mutations proceed through typed domain services that enforce business invariants, unique constraints, and audit logging.
+
+### 4.1 Domain Entity Architecture
+
+```
+                         ┌──────────────┐
+                         │   Customer   │
+                         └──────┬───────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                 │
+              ▼                 ▼                 ▼
+            Leads         Conversations       FollowUps
+              │                 │
+              │                 ▼
+              │             Messages
+              │
+              ▼
+        LeadProducts (N-N)
+              │
+              ▼
+           Product
+              │
+              ▼
+       ProductVariant
+
+Lead / Customer / Conversation
+              │
+              ├──────────────► AgentRun
+              │                    │
+              │                    ▼
+              │                 ToolCall
+              │
+              └──────────────► FollowUp
+
+All Mutations & Critical Operations
+              │
+              ▼
+          AuditLog (Immutable / Append-only)
+```
+
+### 4.2 Core Domain Entities
+
+1. **`Product`**: Represents the master catalog of luxury hand-carved bathtubs and stone artifacts (`sku`, `name`, `slug`, `material`, `base_price`, dimensions, `lead_time_days`, `availability_status`, `is_active`, `metadata`).
+2. **`ProductVariant`**: Dimension, finish, and material configurations (`length`, `width`, `height`, `finish`, `color`, `price_adjustment`, `is_custom`).
+3. **`Customer`**: Multi-channel customer identity with international phone and email normalization and deterministic deduplication (`first_name`, `last_name`, `email`, `phone`, `whatsapp_number`, `source`, `status`).
+4. **`Lead`**: Sales opportunity pipeline (`status`, `source`, `estimated_value`, `priority`, `qualification_score`, `expected_close_date`, `next_follow_up_at`).
+5. **`LeadProduct`**: Association capturing specific products, variants, quantities, and custom fabrication notes requested by a lead.
+6. **`Conversation`**: Multi-channel customer interaction session (`channel`, `external_conversation_id`, `status`, `started_at`, `last_message_at`).
+7. **`Message`**: Individual inbound/outbound communication (`direction`, `sender_type`, `message_type`, `content`, `status`, `sent_at`).
+8. **`FollowUp`**: Scheduled business and client touchpoint (`scheduled_at`, `channel`, `reason`, `status`, `completed_at`, `failure_reason`).
+9. **`AgentRun`**: Observability execution record for AI agents (`agent_name`, `agent_version`, `status`, `input_summary`, `output_summary`, `started_at`, `completed_at`).
+10. **`ToolCall`**: Specific tool invocation during an agent execution (`tool_name`, `status`, `arguments`, `result_summary`, execution latency).
+11. **`AuditLog`**: Append-only audit record capturing actor type, before/after states, request ID, and timestamp for all critical business operations.
+

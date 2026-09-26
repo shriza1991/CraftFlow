@@ -39,6 +39,13 @@ class NotFoundException(AppException):
     error_code = "NOT_FOUND"
 
 
+class ConflictException(AppException):
+    """Raised when a resource cannot be created due to unique constraint conflict."""
+
+    status_code = 409
+    error_code = "CONFLICT"
+
+
 class ExternalServiceException(AppException):
     """Raised when an external API or service call fails."""
 

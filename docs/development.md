@@ -90,3 +90,27 @@ Apply migrations:
 ```bash
 alembic upgrade head
 ```
+
+Rollback one migration:
+```bash
+alembic downgrade -1
+```
+
+---
+
+## 7. Database Seeding
+
+Populate the database with realistic synthetic luxury bathtub catalog, customer, lead, conversation, follow-up, agent run, and audit log data:
+
+```bash
+# Run seed script (idempotent; halts if data exists)
+python -m app.scripts.seed
+# Or via make:
+make seed
+
+# Reset / re-seed from scratch:
+python -m app.scripts.seed --reset
+# Or via make:
+make seed-reset
+```
+

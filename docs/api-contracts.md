@@ -91,14 +91,50 @@ Standard Error Codes:
 
 ---
 
-## 4. Planned Future Endpoints (Milestones P1 → P13)
+## 4. Active P1 Domain Endpoints
+
+All list endpoints support pagination parameters:
+- `page`: Integer >= 1 (default: 1)
+- `page_size`: Integer between 1 and 100 (default: 20)
+
+### 4.1 Products API
+- `GET /api/v1/products`: List products (supports `page`, `page_size`, `material`, `active_only` query filters).
+- `POST /api/v1/products`: Create a luxury bathtub product with optional variants.
+- `GET /api/v1/products/{product_id}`: Retrieve product details including variants.
+- `PATCH /api/v1/products/{product_id}`: Update product attributes (price, lead time, status).
+
+### 4.2 Customers API
+- `GET /api/v1/customers`: List customers with pagination and search query.
+- `POST /api/v1/customers`: Create a customer with normalized email and phone. Deduplicates deterministically.
+- `GET /api/v1/customers/{customer_id}`: Retrieve customer details.
+- `PATCH /api/v1/customers/{customer_id}`: Update customer profile information.
+
+### 4.3 Leads API
+- `GET /api/v1/leads`: List sales leads (supports `status`, `customer_id`, `page`, `page_size`).
+- `POST /api/v1/leads`: Create a qualified lead linked to a customer and requested products/variants.
+- `GET /api/v1/leads/{lead_id}`: Retrieve lead details with associated products.
+- `PATCH /api/v1/leads/{lead_id}`: Update lead status enforcing state machine invariants (e.g. `LOST` cannot jump directly to `WON`).
+
+### 4.4 Conversations & Messages API
+- `POST /api/v1/conversations`: Start or register a customer interaction session on a channel (`WHATSAPP`, `WEBSITE`, `EMAIL`, etc.).
+- `GET /api/v1/conversations/{conversation_id}`: Retrieve conversation with historical messages.
+- `GET /api/v1/conversations/{conversation_id}/messages`: List conversation messages in chronological order.
+- `POST /api/v1/conversations/{conversation_id}/messages`: Append an inbound or outbound message to the conversation thread.
+
+### 4.5 Follow-ups API
+- `GET /api/v1/followups`: List scheduled follow-ups (supports `status`, `lead_id`, `customer_id`, pagination).
+- `POST /api/v1/followups`: Schedule a follow-up touchpoint linked to lead and customer.
+- `PATCH /api/v1/followups/{followup_id}`: Update follow-up status (e.g., mark `COMPLETED`). Prevents `COMPLETED` from reverting to `PENDING`.
+
+---
+
+## 5. Planned Future Endpoints (Milestones P2 → P13)
 
 | Path | Method | Milestone | Description |
 |---|---|---|---|
-| `/api/v1/leads` | POST, GET | P1 | Create/list customer CRM leads |
-| `/api/v1/products` | GET | P1 | Product catalog and dimension inquiries |
 | `/api/v1/rag/search` | POST | P2 | Vector knowledge search |
 | `/api/v1/chat` | POST | P3 | Conversational AI orchestrator endpoint |
 | `/api/v1/webhooks/whatsapp` | GET, POST | P4 | Meta WhatsApp Cloud API webhook |
 | `/api/v1/webhooks/n8n` | POST | P5 | n8n automation relay endpoint |
 | `/api/v1/approvals` | GET, POST | P9 | Human-in-the-loop approval management |
+

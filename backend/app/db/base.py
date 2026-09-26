@@ -3,8 +3,12 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, MetaData, String
+from sqlalchemy import JSON, DateTime, MetaData, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Cross-dialect JSONB helper: PostgreSQL uses JSONB, SQLite falls back to standard JSON
+JSONType = JSON().with_variant(JSONB, "postgresql")
 
 # Consistent naming convention for constraints and indexes across all future tables
 POSTGRES_NAMING_CONVENTION = {

@@ -1,4 +1,4 @@
-.PHONY: help install run test lint format check docker-up docker-down docker-build migrate
+.PHONY: help install run test lint format check docker-up docker-down docker-build migrate seed seed-reset
 
 PYTHON ?= python
 VENV_PYTHON ?= .venv/bin/python
@@ -18,6 +18,8 @@ help:
 	@echo "  make docker-down   Stop docker compose services"
 	@echo "  make docker-build  Build docker compose images"
 	@echo "  make migrate       Run database migrations"
+	@echo "  make seed          Seed database with realistic luxury bathtub business data"
+	@echo "  make seed-reset    Clear and re-seed database with sample business data"
 
 install:
 	$(VENV_PYTHON) -m pip install --upgrade pip
@@ -49,3 +51,9 @@ docker-build:
 
 migrate:
 	$(VENV_PYTHON) -m alembic upgrade head
+
+seed:
+	PYTHONPATH=backend $(VENV_PYTHON) -m app.scripts.seed
+
+seed-reset:
+	PYTHONPATH=backend $(VENV_PYTHON) -m app.scripts.seed --reset

@@ -18,6 +18,7 @@ COPY pyproject.toml README.md /app/
 COPY backend /app/backend
 COPY migrations /app/migrations
 COPY alembic.ini /app/alembic.ini
+COPY knowledge_base /app/knowledge_base
 
 # Install python dependencies and application
 RUN pip install --no-cache-dir --upgrade pip \

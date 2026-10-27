@@ -12,6 +12,9 @@ from app.db.models.enums import (
     ConversationStatus,
     CustomerSource,
     FollowUpStatus,
+    IndexingStatus,
+    KnowledgeDocumentStatus,
+    KnowledgeSourceType,
     LeadPriority,
     LeadStatus,
     MessageDirection,
@@ -22,6 +25,9 @@ from app.db.models.enums import (
     ToolCallStatus,
 )
 from app.db.models.follow_up import FollowUp
+from app.db.models.knowledge_chunk import KnowledgeChunk
+from app.db.models.knowledge_document import KnowledgeDocument
+from app.db.models.knowledge_source import KnowledgeSource
 from app.db.models.lead import Lead
 from app.db.models.message import Message
 from app.db.models.product import LeadProduct, Product, ProductVariant
@@ -42,6 +48,9 @@ __all__ = [
     "AgentRun",
     "ToolCall",
     "AuditLog",
+    "KnowledgeSource",
+    "KnowledgeDocument",
+    "KnowledgeChunk",
     "Channel",
     "CustomerSource",
     "LeadStatus",
@@ -56,4 +65,7 @@ __all__ = [
     "ToolCallStatus",
     "ActorType",
     "ProductAvailability",
+    "KnowledgeSourceType",
+    "KnowledgeDocumentStatus",
+    "IndexingStatus",
 ]

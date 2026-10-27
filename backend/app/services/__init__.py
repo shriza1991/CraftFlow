@@ -4,9 +4,13 @@ from app.services.audit_service import AuditService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.follow_up_service import FollowUpService
+from app.services.knowledge_document_service import KnowledgeDocumentService
+from app.services.knowledge_ingestion_service import KnowledgeIngestionService
+from app.services.knowledge_source_service import KnowledgeSourceService
 from app.services.lead_service import LeadService
 from app.services.message_service import MessageService
 from app.services.product_service import ProductService
+from app.services.rag_service import RAGService
 
 __all__ = [
     "AuditService",
@@ -16,4 +20,8 @@ __all__ = [
     "ConversationService",
     "MessageService",
     "FollowUpService",
+    "KnowledgeSourceService",
+    "KnowledgeDocumentService",
+    "KnowledgeIngestionService",
+    "RAGService",
 ]

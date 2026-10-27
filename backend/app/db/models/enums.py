@@ -142,3 +142,39 @@ class ProductAvailability(StrEnum):
     IN_STOCK = "IN_STOCK"
     MADE_TO_ORDER = "MADE_TO_ORDER"
     DISCONTINUED = "DISCONTINUED"
+
+
+class KnowledgeSourceType(StrEnum):
+    """Origin categories for business knowledge."""
+
+    PRODUCT_CATALOG = "PRODUCT_CATALOG"
+    FAQ = "FAQ"
+    BUSINESS_POLICY = "BUSINESS_POLICY"
+    SHIPPING_POLICY = "SHIPPING_POLICY"
+    INSTALLATION_GUIDE = "INSTALLATION_GUIDE"
+    CARE_GUIDE = "CARE_GUIDE"
+    MATERIAL_GUIDE = "MATERIAL_GUIDE"
+    SALES_GUIDE = "SALES_GUIDE"
+    CUSTOMIZATION_GUIDE = "CUSTOMIZATION_GUIDE"
+    WARRANTY = "WARRANTY"
+    COMPANY_INFORMATION = "COMPANY_INFORMATION"
+    INTERNAL_PROCESS = "INTERNAL_PROCESS"
+    OTHER = "OTHER"
+
+
+class KnowledgeDocumentStatus(StrEnum):
+    """Lifecycle status of a knowledge document."""
+
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class IndexingStatus(StrEnum):
+    """Vector indexing and embedding status."""
+
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+

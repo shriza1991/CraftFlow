@@ -16,6 +16,7 @@ services:
       - ./backend:/app/backend
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
+      - ./knowledge_base:/app/knowledge_base
     depends_on:
       postgres:
         condition: service_healthy

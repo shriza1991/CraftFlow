@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
+    # Embedding & RAG Configuration
+    EMBEDDING_PROVIDER: str = "mock"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSION: int = 1536
+    RAG_CHUNK_SIZE: int = 500
+    RAG_CHUNK_OVERLAP: int = 50
+    RAG_TOP_K: int = 4
+    RAG_SIMILARITY_THRESHOLD: float = 0.2
+    KNOWLEDGE_BASE_DIR: str = "knowledge_base"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 # Set test environment flags before importing application code
 os.environ["APP_ENV"] = "test"
 os.environ["AI_PROVIDER"] = "mock"
+os.environ["EMBEDDING_PROVIDER"] = "mock"
 os.environ["CRM_PROVIDER"] = "mock"
 os.environ["WHATSAPP_PROVIDER"] = "mock"
 

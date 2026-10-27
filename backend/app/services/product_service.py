@@ -11,7 +11,7 @@ from app.services.audit_service import AuditService
 
 
 class ProductService:
-    """Deterministic business operations for the luxury bathtub catalog."""
+    """Deterministic business operations for the catalog."""
 
     @staticmethod
     def create_product(db: Session, product_in: ProductCreate) -> Product:

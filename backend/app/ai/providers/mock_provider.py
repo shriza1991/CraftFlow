@@ -10,7 +10,7 @@ class MockLLMProvider(LLMProvider):
 
     def __init__(
         self,
-        default_reply: str = "This is a deterministic mock response from the Ages Art AI system.",
+        default_reply: str = "This is a deterministic mock response from CraftFlow.",
         embedding_dim: int = 1536,
     ):
         self.default_reply = default_reply

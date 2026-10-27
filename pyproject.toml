@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ages-art-automation"
+name = "craftflow-automation"
 version = "0.1.0"
-description = "AI-Powered Business Automation & Agentic AI System for Ages Art"
+description = "Configurable AI-assisted business automation backend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

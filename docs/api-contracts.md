@@ -1,3 +1,5 @@
+> **Historical Ages Art design:** This document includes the original single-business example and planned capabilities. See the root README for the current configurable scope and implementation status.
+
 # API Contracts — Ages Art AI Automation
 
 ## 1. Global Conventions

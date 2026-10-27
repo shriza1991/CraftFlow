@@ -1,0 +1,6 @@
+{
+  "examples": [
+    {"sku": "DESIGN-CONSULT-01", "name": "Design consultation", "slug": "design-consultation", "category": "Consulting", "base_price": "100.00", "currency": "USD", "lead_time_days": 0, "availability_status": "IN_STOCK", "metadata": {"duration_minutes": 60}},
+    {"sku": "ART-TUB-01", "name": "Custom stone bathtub", "slug": "custom-stone-bathtub", "material": "Marble", "category": "Bathtub", "base_price": "12000.00", "currency": "USD", "lead_time_days": 60, "availability_status": "MADE_TO_ORDER", "is_customizable": true}
+  ]
+}

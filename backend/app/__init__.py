@@ -1,3 +1,3 @@
-"""Ages Art AI Business Automation Application Package."""
+"""CraftFlow business automation application."""
 
 __version__ = "0.1.0"

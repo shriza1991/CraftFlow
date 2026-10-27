@@ -48,18 +48,18 @@ class ProductBase(BaseModel):
     slug: str = Field(..., min_length=1, max_length=255)
     short_description: str | None = Field(default=None, max_length=500)
     description: str | None = None
-    material: str = Field(..., min_length=1, max_length=100)
+    material: str | None = Field(default=None, min_length=1, max_length=100)
     style: str | None = Field(default=None, max_length=100)
-    category: str = Field(default="Bathtub", max_length=100)
+    category: str = Field(default="General", min_length=1, max_length=100)
     length: Decimal | None = Field(default=None, gt=0)
     width: Decimal | None = Field(default=None, gt=0)
     height: Decimal | None = Field(default=None, gt=0)
     weight: Decimal | None = Field(default=None, gt=0)
     base_price: Decimal = Field(..., ge=0)
     currency: str = Field(default="USD", min_length=3, max_length=3)
-    lead_time_days: int = Field(default=60, ge=0)
+    lead_time_days: int = Field(default=0, ge=0)
     availability_status: ProductAvailability = ProductAvailability.MADE_TO_ORDER
-    is_customizable: bool = True
+    is_customizable: bool = False
     is_active: bool = True
     warranty_description: str | None = None
     installation_notes: str | None = None
@@ -83,6 +83,7 @@ class ProductUpdate(BaseModel):
     description: str | None = None
     material: str | None = None
     style: str | None = None
+    category: str | None = Field(default=None, min_length=1, max_length=100)
     base_price: Decimal | None = Field(default=None, ge=0)
     lead_time_days: int | None = Field(default=None, ge=0)
     availability_status: ProductAvailability | None = None

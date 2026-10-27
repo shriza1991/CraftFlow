@@ -18,10 +18,15 @@ class Settings(BaseSettings):
     )
 
     # Application Information
-    APP_NAME: str = "Ages Art AI Business Automation"
+    APP_NAME: str = "CraftFlow"
     APP_ENV: Literal["development", "staging", "production", "test"] = "development"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
+
+    # One business per deployment. These values are public application context.
+    BUSINESS_NAME: str = "Your Business"
+    BUSINESS_DESCRIPTION: str = "A business offering products and services."
+    BUSINESS_INDUSTRY: str = "general"
 
     # Database Configuration
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/ages_art_db"

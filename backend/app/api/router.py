@@ -2,20 +2,13 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import (
-    conversations,
-    customers,
-    followups,
-    health,
-    knowledge,
-    leads,
-    products,
-)
+from app.api.v1 import business, conversations, customers, followups, health, leads, products
 
 api_router = APIRouter()
 
 # Include version 1 API endpoints
 api_router.include_router(health.router, prefix="/api/v1")
+api_router.include_router(business.router, prefix="/api/v1")
 api_router.include_router(products.router, prefix="/api/v1")
 api_router.include_router(customers.router, prefix="/api/v1")
 api_router.include_router(leads.router, prefix="/api/v1")

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """Luxury handmade bathtub and stone-art catalog product entity."""
+    """Catalog item representing a product or service."""
 
     __tablename__ = "products"
     __table_args__ = (
@@ -29,9 +29,9 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Architectural specs
-    material: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    material: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     style: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    category: Mapped[str] = mapped_column(String(100), default="Bathtub", nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(100), default="General", nullable=False, index=True)
 
     length: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     width: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
@@ -41,12 +41,12 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Commercial terms
     base_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
-    lead_time_days: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     availability_status: Mapped[str] = mapped_column(
         String(50), default=ProductAvailability.MADE_TO_ORDER.value, nullable=False
     )
 
-    is_customizable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_customizable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
     warranty_description: Mapped[str | None] = mapped_column(Text, nullable=True)

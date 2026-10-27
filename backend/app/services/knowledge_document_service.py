@@ -1,10 +1,11 @@
 """Knowledge Document domain service managing document lifecycle and versioning."""
 
 import hashlib
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundException, ValidationException
+from app.core.exceptions import NotFoundException
 from app.db.models.enums import IndexingStatus, KnowledgeDocumentStatus
 from app.db.models.knowledge_document import KnowledgeDocument
 from app.db.models.knowledge_source import KnowledgeSource

@@ -22,7 +22,9 @@ router = APIRouter(prefix="/customers", tags=["Customers"])
 def list_customers(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
-    search: str | None = Query(default=None, description="Search by name, email, phone, or company"),
+    search: str | None = Query(
+        default=None, description="Search by name, email, phone, or company"
+    ),
     active_only: bool = Query(default=True, description="Filter only active customers"),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[CustomerResponse]:

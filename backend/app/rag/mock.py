@@ -16,5 +16,9 @@ class MockRetriever(Retriever):
     ) -> RetrievalResult:
         chunks = self.chunks
         if filters:
-            chunks = [chunk for chunk in chunks if all(chunk.metadata.get(k) == v for k, v in filters.items())]
+            chunks = [
+                chunk
+                for chunk in chunks
+                if all(chunk.metadata.get(k) == v for k, v in filters.items())
+            ]
         return RetrievalResult(query=query, chunks=chunks[:top_k], total_found=len(chunks))

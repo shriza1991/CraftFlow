@@ -51,9 +51,5 @@ class Conversation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
-    agent_runs: Mapped[list["AgentRun"]] = relationship(
-        "AgentRun", back_populates="conversation"
-    )
-    follow_ups: Mapped[list["FollowUp"]] = relationship(
-        "FollowUp", back_populates="conversation"
-    )
+    agent_runs: Mapped[list["AgentRun"]] = relationship("AgentRun", back_populates="conversation")
+    follow_ups: Mapped[list["FollowUp"]] = relationship("FollowUp", back_populates="conversation")

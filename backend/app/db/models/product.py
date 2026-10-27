@@ -31,7 +31,9 @@ class Product(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Architectural specs
     material: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     style: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    category: Mapped[str] = mapped_column(String(100), default="General", nullable=False, index=True)
+    category: Mapped[str] = mapped_column(
+        String(100), default="General", nullable=False, index=True
+    )
 
     length: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     width: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)

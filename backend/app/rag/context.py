@@ -1,6 +1,7 @@
 """RAG context builder formatting retrieved knowledge snippets with source attribution."""
 
 from typing import Any
+
 from app.rag.base import RetrievalChunk
 
 

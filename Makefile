@@ -7,7 +7,7 @@ ifeq ($(OS),Windows_NT)
 endif
 
 help:
-	@echo "Ages Art AI Business Automation - Available Commands:"
+	@echo "CraftFlow Business Automation - Available Commands:"
 	@echo "  make install       Install dependencies"
 	@echo "  make run           Run FastAPI development server"
 	@echo "  make test          Run pytest suite"

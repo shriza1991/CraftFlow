@@ -1,6 +1,7 @@
 """KnowledgeSource domain model representing origin repositories of business information."""
 
 from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

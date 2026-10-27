@@ -152,9 +152,7 @@ def test_customer_normalization_and_deduplication(db_session: Session):
     assert found_by_email.id == customer.id
 
     # Lookup by raw phone
-    found_by_phone = CustomerService.find_existing_customer(
-        db=db_session, phone="+91-987-654-3210"
-    )
+    found_by_phone = CustomerService.find_existing_customer(db=db_session, phone="+91-987-654-3210")
     assert found_by_phone is not None
     assert found_by_phone.id == customer.id
 

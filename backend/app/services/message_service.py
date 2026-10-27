@@ -58,7 +58,9 @@ class MessageService:
             )
 
         query = select(Message).where(Message.conversation_id == conversation_id)
-        count_query = select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
+        count_query = select(func.count(Message.id)).where(
+            Message.conversation_id == conversation_id
+        )
 
         total = db.scalar(count_query) or 0
         items = list(

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
+
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
@@ -40,7 +41,9 @@ class KnowledgeIngestionService:
 
         logger.info(
             f"Starting ingestion for document {doc.id} (title='{doc.title}', v{doc.version})",
-            extra={"extra_payload": {"document_id": doc.id, "title": doc.title, "version": doc.version}},
+            extra={
+                "extra_payload": {"document_id": doc.id, "title": doc.title, "version": doc.version}
+            },
         )
 
         # Mark as processing

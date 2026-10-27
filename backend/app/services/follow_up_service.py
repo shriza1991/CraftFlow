@@ -65,7 +65,10 @@ class FollowUpService:
             entity_type="FollowUp",
             entity_id=follow_up.id,
             description=f"Scheduled follow-up for lead '{lead.id}' on {follow_up.scheduled_at.isoformat()}.",
-            after_state={"scheduled_at": follow_up.scheduled_at.isoformat(), "status": follow_up.status},
+            after_state={
+                "scheduled_at": follow_up.scheduled_at.isoformat(),
+                "status": follow_up.status,
+            },
         )
         db.commit()
         return follow_up

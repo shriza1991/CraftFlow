@@ -1,9 +1,7 @@
 """Integration tests for Knowledge Base & RAG REST API endpoints."""
 
-import pytest
-from fastapi.testclient import TestClient
-
 from app.db.models.enums import KnowledgeSourceType
+from fastapi.testclient import TestClient
 
 
 def test_knowledge_sources_crud_api(client_with_db: TestClient):

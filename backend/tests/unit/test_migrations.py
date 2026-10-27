@@ -47,7 +47,11 @@ def test_merge_revision_preserves_both_histories(script_directory: ScriptDirecto
     assert head_rev is not None, f"Merge revision {MERGE_HEAD} not found"
     assert head_rev.is_merge_point is True
 
-    down_revs = set(head_rev.down_revision) if isinstance(head_rev.down_revision, tuple | list) else {head_rev.down_revision}
+    down_revs = (
+        set(head_rev.down_revision)
+        if isinstance(head_rev.down_revision, tuple | list)
+        else {head_rev.down_revision}
+    )
     assert down_revs == {CATALOG_HEAD, KNOWLEDGE_HEAD}, (
         f"Merge revision must preserve both {CATALOG_HEAD} and {KNOWLEDGE_HEAD}, got {down_revs}"
     )

@@ -26,9 +26,13 @@ class ConversationService:
 
         conv = Conversation(
             customer_id=conv_in.customer_id,
-            channel=conv_in.channel.value if hasattr(conv_in.channel, "value") else str(conv_in.channel),
+            channel=conv_in.channel.value
+            if hasattr(conv_in.channel, "value")
+            else str(conv_in.channel),
             external_conversation_id=conv_in.external_conversation_id,
-            status=conv_in.status.value if hasattr(conv_in.status, "value") else str(conv_in.status),
+            status=conv_in.status.value
+            if hasattr(conv_in.status, "value")
+            else str(conv_in.status),
             metadata_=conv_in.metadata_,
         )
         db.add(conv)

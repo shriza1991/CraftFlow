@@ -30,9 +30,24 @@ class Settings(BaseSettings):
 
     # Database Configuration
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/ages_art_db"
+    TEST_DATABASE_URL: str | None = None
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
     DATABASE_POOL_TIMEOUT: int = 30
+
+    @property
+    def effective_test_database_url(self) -> str:
+        """Return explicit TEST_DATABASE_URL or derive an isolated test DB URL from DATABASE_URL."""
+        if self.TEST_DATABASE_URL:
+            return self.TEST_DATABASE_URL
+        from sqlalchemy.engine import make_url
+
+        url = make_url(self.DATABASE_URL)
+        dbname = url.database or "ages_art_db"
+        if not dbname.endswith("_test") and not dbname.endswith("_test_db"):
+            test_dbname = f"{dbname}_test"
+            return str(url.set(database=test_dbname))
+        return str(url)
 
     # AI & LLM Provider Configuration
     AI_PROVIDER: str = "mock"

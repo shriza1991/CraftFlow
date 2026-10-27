@@ -1,9 +1,10 @@
 """CLI script to ingest knowledge base markdown documents into PostgreSQL + pgvector."""
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
+
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,9 @@ from app.db.models.knowledge_source import KnowledgeSource
 from app.db.session import SessionLocal
 from app.rag.chunking import TextChunker
 from app.rag.embeddings import get_embedding_provider
-from app.services.knowledge_document_service import KnowledgeDocumentService, compute_content_checksum
+from app.services.knowledge_document_service import (
+    compute_content_checksum,
+)
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
 from app.services.knowledge_source_service import KnowledgeSourceService
 
@@ -140,20 +143,28 @@ def ingest_knowledge_base(
                 )
 
                 # Check existing doc
-                existing_doc = db.query(KnowledgeDocument).filter(
-                    KnowledgeDocument.source_id == source.id,
-                    KnowledgeDocument.title == title,
-                    KnowledgeDocument.checksum == checksum,
-                    KnowledgeDocument.indexing_status == IndexingStatus.COMPLETED.value,
-                ).first()
+                existing_doc = (
+                    db.query(KnowledgeDocument)
+                    .filter(
+                        KnowledgeDocument.source_id == source.id,
+                        KnowledgeDocument.title == title,
+                        KnowledgeDocument.checksum == checksum,
+                        KnowledgeDocument.indexing_status == IndexingStatus.COMPLETED.value,
+                    )
+                    .first()
+                )
 
                 if existing_doc and not reset:
                     # Check chunks actually exist
-                    chunk_count = db.query(KnowledgeChunk).filter(
-                        KnowledgeChunk.document_id == existing_doc.id
-                    ).count()
+                    chunk_count = (
+                        db.query(KnowledgeChunk)
+                        .filter(KnowledgeChunk.document_id == existing_doc.id)
+                        .count()
+                    )
                     if chunk_count > 0:
-                        print(f"[SKIP] '{title}' already indexed with matching checksum ({chunk_count} chunks)")
+                        print(
+                            f"[SKIP] '{title}' already indexed with matching checksum ({chunk_count} chunks)"
+                        )
                         stats["documents_skipped"] += 1
                         continue
 
@@ -168,7 +179,9 @@ def ingest_knowledge_base(
                     embedding_provider=provider,
                 )
 
-                chunks_count = db.query(KnowledgeChunk).filter(KnowledgeChunk.document_id == doc.id).count()
+                chunks_count = (
+                    db.query(KnowledgeChunk).filter(KnowledgeChunk.document_id == doc.id).count()
+                )
                 stats["documents_processed"] += 1
                 stats["chunks_created"] += chunks_count
                 stats["embeddings_generated"] += chunks_count
@@ -188,8 +201,16 @@ def ingest_knowledge_base(
 def main() -> None:
     """CLI entrypoint."""
     parser = argparse.ArgumentParser(description="Ingest CraftFlow Knowledge Base into pgvector.")
-    parser.add_argument("--reset", action="store_true", help="Rebuild all knowledge tables and embeddings from scratch.")
-    parser.add_argument("--dry-run", action="store_true", help="Inspect files and chunks without writing to the database.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Rebuild all knowledge tables and embeddings from scratch.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Inspect files and chunks without writing to the database.",
+    )
     parser.add_argument("--dir", type=str, default=None, help="Path to knowledge_base directory.")
     args = parser.parse_args()
 

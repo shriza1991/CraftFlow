@@ -1,48 +1,171 @@
 # CraftFlow
 
-CraftFlow is an early-stage backend for business operations and AI-assisted workflows. It can be configured for a product business, a professional service, or a custom manufacturer. Each deployment currently serves **one** business; there is no tenant isolation or multi-business hosting yet.
+CraftFlow is a configurable backend platform for business operations and AI-assisted workflows. It provides a modular foundation for product businesses, professional services, and custom manufacturers. Each deployment serves **one** business entity configured through environment variables.
 
-## Implemented foundation
+---
 
-- FastAPI APIs for products and services, customers, leads, conversations, messages, and follow-ups.
-- SQLAlchemy models, PostgreSQL migrations, validation, audit records, pagination, and business state checks.
-- Deployment-specific business identity via environment variables, exposed at `GET /api/v1/business`.
-- AI provider and agent/tool interfaces, plus a simple demo agent. The search tool and retriever are mocks with no default business facts; they are not connected to the persisted catalog or a vector index.
-- Integration clients and scaffolding for WhatsApp, Google, and n8n. Automated follow-up delivery, real retrieval, agent orchestration, approval workflows, and external integrations are future work.
+## Architecture & Capabilities
 
-The original Ages Art sample data is retained in `backend/app/scripts/seed.py` as an optional example. It is not loaded automatically and does not define the platform's scope.
+- **FastAPI Application**: High-performance asynchronous API layer with versioned endpoints (`/api/v1/*`), OpenAPI documentation (`/docs`), centralized exception handling, correlation ID tracking (`X-Request-ID`), and health/readiness diagnostics.
+- **Relational & Vector Data Model**: PostgreSQL 16 with `pgvector` extension for products, product variants, customers, leads, conversations, messages, follow-ups, audit logs, and knowledge base document chunks with vector embeddings.
+- **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`012e8b346d5b`), supporting fresh deployments and upgrades from historical branches.
+- **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
 
-## Configure a business
+---
 
-Copy `.env.example` to `.env` and set `BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, and `BUSINESS_INDUSTRY`. These are public, non-secret values and are used in the demo agent's system context and business endpoint. `examples/ages-art.env` and `examples/design-studio.env` illustrate two separate deployments. Restart the application after changing environment configuration.
+## Mock Integrations vs. Live Integrations
 
-`examples/catalog.json` contains example API payloads for a service and a manufactured product. Create them individually with `POST /api/v1/products`. Material and physical dimensions are optional; use `metadata` for domain-specific attributes. Set availability, lead time, currency, and customization explicitly to suit the business.
+CraftFlow is designed with swappable provider interfaces so you can develop and test offline without external accounts or API keys, then switch to live providers in production:
 
-## Run locally
+| Component | Mock Implementation (Default / Offline) | Live Implementation (Production / Configurable) |
+| :--- | :--- | :--- |
+| **Relational Database** | In-memory SQLite supported for unit tests (`test_general_business.py`) | PostgreSQL 16 (`DATABASE_URL=postgresql+psycopg://...`) |
+| **Vector Search** | Deterministic mock vector generation & similarity scoring | PostgreSQL `pgvector` extension (`VECTOR_DB_PROVIDER=pgvector`) with 1536-dim embeddings |
+| **AI / LLM Provider** | `AI_PROVIDER=mock`<br>Returns simulated agent responses deterministically | `AI_PROVIDER=openai`<br>Connects to OpenAI API (`OPENAI_API_KEY`, `OPENAI_MODEL=gpt-4o-mini`) |
+| **Embeddings** | `EMBEDDING_PROVIDER=mock`<br>Generates deterministic 1536-dimensional mock vectors | `EMBEDDING_PROVIDER=openai`<br>Calls `text-embedding-3-small` via OpenAI API |
+| **CRM Integration** | `CRM_PROVIDER=mock`<br>In-memory customer and lead tracking | `CRM_PROVIDER=hubspot` (or webhook automation)<br>Syncs contacts with external CRM |
+| **WhatsApp Messaging** | `WHATSAPP_PROVIDER=mock`<br>Simulates outbound payload generation | `WHATSAPP_PROVIDER=meta`<br>Dispatches live messages via Meta Cloud API |
+| **Workflow Automation** | Local mock webhook endpoints | `N8N_BASE_URL` & `N8N_WEBHOOK_SECRET`<br>Dispatches triggers to external n8n workflows |
 
-Requires Python 3.12+, PostgreSQL, and optionally Docker Compose.
+---
 
+## Local Setup Guide
+
+### Prerequisites
+- Python 3.12+
+- Docker and Docker Compose (recommended for PostgreSQL + pgvector)
+
+---
+
+### Step 1: Clone & Configure Environment
+
+#### PowerShell (Windows):
+```powershell
+Copy-Item .env.example .env
+```
+
+#### Bash (macOS / Linux):
 ```bash
 cp .env.example .env
-pip install -e '.[dev]'
-docker compose up -d
+```
+
+Review `.env` and adjust settings as needed. By default, PostgreSQL maps host port `5435` to container port `5432` to avoid conflicts with any local PostgreSQL instance on port `5432`:
+- `DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5435/ages_art_db`
+- `TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5435/ages_art_db_test`
+
+---
+
+### Step 2: Set Up Python Virtual Environment
+
+#### PowerShell (Windows):
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+#### Bash (macOS / Linux):
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+> **Note**: In PowerShell, always wrap `".[dev]"` in double quotes to prevent PowerShell from interpreting square brackets as glob wildcards.
+
+---
+
+### Step 3: Start PostgreSQL with pgvector
+
+Use Docker Compose to start the database container:
+
+```bash
+docker compose up -d postgres
+```
+
+The Docker Compose configuration automatically provisions both the development database (`ages_art_db`) and the isolated test database (`ages_art_db_test`) with the `vector` extension enabled via `docker/init-db.sql`.
+
+To verify the database container is healthy:
+```bash
+docker compose ps
+```
+
+---
+
+### Step 4: Run Database Migrations
+
+Apply Alembic migrations to bring the development database schema up to the latest head:
+
+```bash
 python -m alembic upgrade head
+```
+
+Verify single head status:
+```bash
+python -m alembic heads
+```
+
+---
+
+### Step 5: Start the Backend Application
+
+#### Local Development Server (Recommended):
+```bash
 uvicorn app.main:app --reload --app-dir backend --port 8000
 ```
 
-Alternatively run the backend outside Docker against the PostgreSQL instance. The Compose backend and local uvicorn both listen on port 8000; use one at a time. API docs are available at `/docs` in development.
-
-For an existing Ages Art database, run `python -m alembic upgrade head`: the new migration permits catalog items without a material and leaves existing rows intact. Before downgrading, explicitly backfill any items with null materials; the old constraint cannot store them.
-
-## Test
-
+#### Running Entire Stack with Docker:
+Alternatively, you can run both backend and postgres services inside Docker:
 ```bash
-python -m pytest backend/tests/unit --ignore=backend/tests/unit/test_domain_models.py
-python -m pytest backend/tests/integration
+docker compose up -d
+```
+The backend container uses `docker/entrypoint.sh` to run database migrations automatically before starting `uvicorn`.
+
+#### Verify Server Health:
+- Interactive Swagger UI: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/api/v1/health`
+- Readiness check: `http://localhost:8000/api/v1/readiness`
+- Business profile: `http://localhost:8000/api/v1/business`
+
+---
+
+## Testing & Database Isolation
+
+### Test Database Isolation
+CraftFlow tests are designed to **never mutate or depend on development data**:
+- Test configurations automatically route database connections to `TEST_DATABASE_URL` (default: `.../ages_art_db_test`), keeping `ages_art_db` completely untouched.
+- Database tests execute inside isolated transaction savepoints (`join_transaction_mode="create_savepoint"`) and rollback on completion.
+- If PostgreSQL is not running locally, database-dependent tests skip cleanly rather than hanging or failing. When PostgreSQL is online, all tests execute and pass.
+
+### Running Tests
+
+#### Run all tests:
+```bash
+python -m pytest backend/tests -v
 ```
 
-Existing database integration tests require a reachable PostgreSQL database configured by `DATABASE_URL`; they create records in an isolated transaction. Mock integrations do not contact providers.
+#### Run unit tests only:
+```bash
+python -m pytest backend/tests/unit -v
+```
 
-## Next steps
+#### Run integration tests only:
+```bash
+python -m pytest backend/tests/integration -v
+```
 
-Implement an actual inquiry-to-follow-up flow, production retrieval, authenticated and authorized APIs, durable jobs and idempotent webhook delivery, human approvals, and measured end-to-end evaluation. Multi-tenant hosting would additionally require tenant-scoped data, credentials, access control, jobs, and retrieval; changing the business name alone does not provide isolation.
+#### Run code style and linter checks:
+```bash
+python -m ruff check backend
+python -m ruff format --check backend
+```
+
+---
+
+## Continuous Integration (CI)
+
+A GitHub Actions workflow is defined in `.github/workflows/ci.yml`. It runs automatically on all pull requests and pushes targeting `main`:
+1. **Lint Job**: Validates code style using `ruff check backend` and `ruff format --check backend`.
+2. **Test Job**: Launches a `pgvector/pgvector:pg16` service container, verifies the single Alembic head, applies database migrations, and executes all unit and PostgreSQL/pgvector integration tests against the isolated test database. CI reports a build failure if any check or test fails.

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -49,4 +50,6 @@ class KnowledgeChunk(Base, UUIDPrimaryKeyMixin):
     )
 
     # Relationship
-    document: Mapped["KnowledgeDocument"] = relationship("KnowledgeDocument", back_populates="chunks")
+    document: Mapped["KnowledgeDocument"] = relationship(
+        "KnowledgeDocument", back_populates="chunks"
+    )

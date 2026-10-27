@@ -1,7 +1,6 @@
 """Unit tests for deterministic text chunking."""
 
-import pytest
-from app.rag.chunking import TextChunk, TextChunker
+from app.rag.chunking import TextChunker
 
 
 def test_chunker_empty_input():

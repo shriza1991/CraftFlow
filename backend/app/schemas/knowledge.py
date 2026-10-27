@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Any
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.db.models.enums import IndexingStatus, KnowledgeDocumentStatus, KnowledgeSourceType
@@ -96,7 +97,8 @@ class KnowledgeSearchRequest(BaseModel):
         default=None, ge=0.0, le=1.0, description="Minimum cosine similarity score"
     )
     filters: dict[str, Any] = Field(
-        default_factory=dict, description="Metadata filters: document_type, source_id, language, product_id"
+        default_factory=dict,
+        description="Metadata filters: document_type, source_id, language, product_id",
     )
 
 

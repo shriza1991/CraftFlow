@@ -1,7 +1,7 @@
 """Deterministic text chunking preserving paragraph boundaries and origin metadata."""
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import get_settings

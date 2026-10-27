@@ -1,10 +1,11 @@
 """Embedding provider abstraction and implementations (Mock and OpenAI)."""
 
-from abc import ABC, abstractmethod
 import hashlib
 import math
 import re
+from abc import ABC, abstractmethod
 from typing import Any
+
 import httpx
 
 from app.core.config import get_settings
@@ -55,11 +56,44 @@ class MockEmbeddingProvider(EmbeddingProvider):
             return [0.0] * self._dim
 
         stopwords = {
-            "the", "a", "an", "and", "or", "is", "are", "was", "were",
-            "in", "on", "at", "to", "for", "of", "with", "by", "from",
-            "it", "this", "that", "what", "how", "when", "where", "who",
-            "which", "why", "can", "should", "could", "would", "i", "you",
-            "my", "your", "we", "our",
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "is",
+            "are",
+            "was",
+            "were",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "of",
+            "with",
+            "by",
+            "from",
+            "it",
+            "this",
+            "that",
+            "what",
+            "how",
+            "when",
+            "where",
+            "who",
+            "which",
+            "why",
+            "can",
+            "should",
+            "could",
+            "would",
+            "i",
+            "you",
+            "my",
+            "your",
+            "we",
+            "our",
         }
         all_words = re.findall(r"\w+", cleaned)
         content_words = [w for w in all_words if w not in stopwords]

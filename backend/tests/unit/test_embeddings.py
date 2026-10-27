@@ -1,7 +1,7 @@
 """Unit tests for embedding providers."""
 
 import pytest
-from app.core.exceptions import AIProviderException, RAGException
+from app.core.exceptions import AIProviderException
 from app.rag.embeddings import (
     MockEmbeddingProvider,
     OpenAIEmbeddingProvider,

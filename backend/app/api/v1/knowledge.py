@@ -99,7 +99,9 @@ def list_documents(
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     source_id: str | None = Query(default=None, description="Filter by source ID"),
     document_type: str | None = Query(default=None, description="Filter by document type"),
-    status: KnowledgeDocumentStatus | None = Query(default=None, description="Filter by document status"),
+    status: KnowledgeDocumentStatus | None = Query(
+        default=None, description="Filter by document status"
+    ),
     search: str | None = Query(default=None, description="Search in document title"),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[KnowledgeDocumentResponse]:

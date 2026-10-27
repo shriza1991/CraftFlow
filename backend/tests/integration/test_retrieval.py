@@ -1,11 +1,10 @@
 """Integration tests for VectorRetriever against PostgreSQL + pgvector."""
 
 import pytest
-from sqlalchemy.orm import Session
-
 from app.db.models.enums import KnowledgeDocumentStatus, KnowledgeSourceType
 from app.rag.retriever import VectorRetriever
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
+from sqlalchemy.orm import Session
 
 
 @pytest.mark.asyncio

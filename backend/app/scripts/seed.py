@@ -57,7 +57,11 @@ def seed_database(reset: bool = False) -> dict[str, int]:
         if reset:
             print("Clearing existing domain data for fresh deterministic seed...")
             # Delete in child-to-parent order to respect foreign keys
-            db.execute(text("TRUNCATE TABLE tool_calls, agent_runs, audit_logs, follow_ups, messages, conversations, lead_products, leads, product_variants, products, customers CASCADE;"))
+            db.execute(
+                text(
+                    "TRUNCATE TABLE tool_calls, agent_runs, audit_logs, follow_ups, messages, conversations, lead_products, leads, product_variants, products, customers CASCADE;"
+                )
+            )
             db.commit()
 
         # Check if already seeded
@@ -138,7 +142,10 @@ def seed_database(reset: bool = False) -> dict[str, int]:
                 "availability_status": ProductAvailability.MADE_TO_ORDER.value,
                 "is_customizable": True,
                 "is_active": True,
-                "metadata_": {"origin": "Markina-Xemein, Spain", "finish_default": "Polished Satin"},
+                "metadata_": {
+                    "origin": "Markina-Xemein, Spain",
+                    "finish_default": "Polished Satin",
+                },
                 "variants": [
                     {
                         "name": "Nero Marquina - Polished Satin",
@@ -371,8 +378,22 @@ def seed_database(reset: bool = False) -> dict[str, int]:
         db.flush()
         counts["leads"] += 1
 
-        db.add(LeadProduct(lead_id=lead_1.id, product_id=products_map["TUB-CAR-01"].id, quantity=1, notes="1800mm standard"))
-        db.add(LeadProduct(lead_id=lead_1.id, product_id=products_map["TUB-VIOLA-04"].id, quantity=1, notes="Powder room suite"))
+        db.add(
+            LeadProduct(
+                lead_id=lead_1.id,
+                product_id=products_map["TUB-CAR-01"].id,
+                quantity=1,
+                notes="1800mm standard",
+            )
+        )
+        db.add(
+            LeadProduct(
+                lead_id=lead_1.id,
+                product_id=products_map["TUB-VIOLA-04"].id,
+                quantity=1,
+                notes="Powder room suite",
+            )
+        )
         counts["lead_products"] += 2
 
         # Lead 2: Marcus Chen interested in Nero Marquina
@@ -395,7 +416,14 @@ def seed_database(reset: bool = False) -> dict[str, int]:
         db.flush()
         counts["leads"] += 1
 
-        db.add(LeadProduct(lead_id=lead_2.id, product_id=products_map["TUB-NERO-02"].id, quantity=3, notes="Resort villa master baths"))
+        db.add(
+            LeadProduct(
+                lead_id=lead_2.id,
+                product_id=products_map["TUB-NERO-02"].id,
+                quantity=3,
+                notes="Resort villa master baths",
+            )
+        )
         counts["lead_products"] += 1
 
         # Lead 3: Sofia Lindqvist interested in Travertine Romano
@@ -413,7 +441,9 @@ def seed_database(reset: bool = False) -> dict[str, int]:
         db.add(lead_3)
         db.flush()
         counts["leads"] += 1
-        db.add(LeadProduct(lead_id=lead_3.id, product_id=products_map["TUB-TRAV-03"].id, quantity=1))
+        db.add(
+            LeadProduct(lead_id=lead_3.id, product_id=products_map["TUB-TRAV-03"].id, quantity=1)
+        )
         counts["lead_products"] += 1
 
         # Lead 4: David Sterling interested in Verde Alpi
@@ -431,7 +461,9 @@ def seed_database(reset: bool = False) -> dict[str, int]:
         db.add(lead_4)
         db.flush()
         counts["leads"] += 1
-        db.add(LeadProduct(lead_id=lead_4.id, product_id=products_map["TUB-VERDE-05"].id, quantity=1))
+        db.add(
+            LeadProduct(lead_id=lead_4.id, product_id=products_map["TUB-VERDE-05"].id, quantity=1)
+        )
         counts["lead_products"] += 1
 
         # Lead 5: Amara Al-Mansoor interested in Carrara Monolithic
@@ -587,7 +619,11 @@ def seed_database(reset: bool = False) -> dict[str, int]:
             agent_run_id=agent_run.id,
             tool_name="create_lead",
             status=ToolCallStatus.SUCCEEDED.value,
-            arguments={"customer_id": customers_list[0].id, "priority": "HIGH", "estimated_value": 39000},
+            arguments={
+                "customer_id": customers_list[0].id,
+                "priority": "HIGH",
+                "estimated_value": 39000,
+            },
             result_summary={"lead_id": lead_1.id, "status": "QUALIFIED"},
             started_at=now - timedelta(hours=5, minutes=59),
             completed_at=now - timedelta(hours=5, minutes=58),
@@ -635,8 +671,12 @@ def seed_database(reset: bool = False) -> dict[str, int]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed CraftFlow PostgreSQL database with luxury bathtub domain data.")
-    parser.add_argument("--reset", action="store_true", help="Truncate existing tables before seeding")
+    parser = argparse.ArgumentParser(
+        description="Seed CraftFlow PostgreSQL database with luxury bathtub domain data."
+    )
+    parser.add_argument(
+        "--reset", action="store_true", help="Truncate existing tables before seeding"
+    )
     args = parser.parse_args()
     seed_database(reset=args.reset)
 

@@ -1,12 +1,11 @@
 """Integration tests for RAGService grounded answers and no-hallucination behavior."""
 
 import pytest
-from sqlalchemy.orm import Session
-
 from app.db.models.enums import KnowledgeSourceType
 from app.schemas.rag import RAGQueryRequest
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
 from app.services.rag_service import RAGService
+from sqlalchemy.orm import Session
 
 
 @pytest.mark.asyncio

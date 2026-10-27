@@ -125,7 +125,11 @@ class LeadService:
 
         # Enforce deterministic state machine rules
         if "status" in update_dict and update_dict["status"] is not None:
-            new_status = update_dict["status"].value if hasattr(update_dict["status"], "value") else str(update_dict["status"])
+            new_status = (
+                update_dict["status"].value
+                if hasattr(update_dict["status"], "value")
+                else str(update_dict["status"])
+            )
             if before_status == LeadStatus.LOST.value and new_status == LeadStatus.WON.value:
                 raise ValidationException(
                     message="A lead marked as LOST cannot directly transition to WON without requalification.",

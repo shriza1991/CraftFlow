@@ -1,15 +1,14 @@
 """Integration tests for KnowledgeIngestionService with real PostgreSQL + pgvector."""
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.core.exceptions import RAGException
 from app.db.models.enums import IndexingStatus, KnowledgeSourceType
 from app.db.models.knowledge_chunk import KnowledgeChunk
 from app.db.models.knowledge_document import KnowledgeDocument
-from app.rag.embeddings import EmbeddingProvider, MockEmbeddingProvider
+from app.rag.embeddings import EmbeddingProvider
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 
 def test_ingest_raw_document_success(db_session: Session):
@@ -34,9 +33,7 @@ def test_ingest_raw_document_success(db_session: Session):
     assert doc.indexed_at is not None
 
     chunks = list(
-        db_session.scalars(
-            select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)
-        ).all()
+        db_session.scalars(select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)).all()
     )
     assert len(chunks) >= 1
     assert len(chunks[0].embedding) == 1536
@@ -57,14 +54,14 @@ def test_reindexing_replaces_old_chunks(db_session: Session):
     )
 
     initial_chunks = list(
-        db_session.scalars(
-            select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)
-        ).all()
+        db_session.scalars(select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)).all()
     )
     assert len(initial_chunks) == 1
 
     # Update content on document and re-index
-    doc.content = "Updated guidelines for travertine sealing. Use fluoropolymer sealer every 12 months."
+    doc.content = (
+        "Updated guidelines for travertine sealing. Use fluoropolymer sealer every 12 months."
+    )
     db_session.commit()
 
     reindexed_doc = KnowledgeIngestionService.ingest_document(
@@ -74,9 +71,7 @@ def test_reindexing_replaces_old_chunks(db_session: Session):
     assert reindexed_doc.indexing_status == IndexingStatus.COMPLETED.value
 
     new_chunks = list(
-        db_session.scalars(
-            select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)
-        ).all()
+        db_session.scalars(select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id)).all()
     )
     assert len(new_chunks) >= 1
     assert "fluoropolymer" in new_chunks[0].content
@@ -108,9 +103,7 @@ def test_failed_ingestion_transaction_rollback(db_session: Session):
         )
 
     # Verify no orphan chunks were saved
-    doc = db_session.scalar(
-        select(KnowledgeDocument).where(KnowledgeDocument.title == title)
-    )
+    doc = db_session.scalar(select(KnowledgeDocument).where(KnowledgeDocument.title == title))
     if doc:
         chunks = list(
             db_session.scalars(

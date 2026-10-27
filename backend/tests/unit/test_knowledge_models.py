@@ -1,13 +1,11 @@
 """Unit tests for knowledge base domain models and constraints."""
 
-import pytest
-from sqlalchemy.orm import Session
-
 from app.db.models.enums import IndexingStatus, KnowledgeDocumentStatus, KnowledgeSourceType
 from app.db.models.knowledge_chunk import KnowledgeChunk
 from app.db.models.knowledge_document import KnowledgeDocument
 from app.db.models.knowledge_source import KnowledgeSource
 from app.services.knowledge_document_service import compute_content_checksum
+from sqlalchemy.orm import Session
 
 
 def test_create_knowledge_source_and_document(db_session: Session):

@@ -8,7 +8,17 @@ from app.rag.mock import MockRetriever
 @pytest.mark.asyncio
 async def test_mock_retriever():
     """Verify MockRetriever returns relevant chunks matching query parameters."""
-    retriever = MockRetriever([RetrievalChunk(id="1", document_id="care", content="marble care", score=0.9, metadata={"category": "care_guide"})])
+    retriever = MockRetriever(
+        [
+            RetrievalChunk(
+                id="1",
+                document_id="care",
+                content="marble care",
+                score=0.9,
+                metadata={"category": "care_guide"},
+            )
+        ]
+    )
     result = await retriever.search(query="marble maintenance care", top_k=2)
 
     assert result.query == "marble maintenance care"

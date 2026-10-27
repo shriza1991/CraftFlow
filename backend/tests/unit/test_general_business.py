@@ -21,8 +21,10 @@ from sqlalchemy.orm import Session
 
 @pytest.mark.parametrize(
     ("name", "description", "industry"),
-    [("Ages Art", "Handmade stone products", "manufacturing"),
-     ("Northstar Studio", "Interior design consultations", "professional services")],
+    [
+        ("Ages Art", "Handmade stone products", "manufacturing"),
+        ("Northstar Studio", "Interior design consultations", "professional services"),
+    ],
 )
 def test_configured_business_endpoint(monkeypatch, name, description, industry):
     monkeypatch.setenv("BUSINESS_NAME", name)
@@ -39,15 +41,28 @@ def test_catalog_supports_service_and_manufactured_product():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine, expire_on_commit=False) as db:
-        service = ProductService.create_product(db, ProductCreate(
-            sku="CONSULT-01", name="Consultation", slug="consultation",
-            category="Services", base_price=Decimal("100"),
-            metadata={"duration_minutes": 60},
-        ))
-        product = ProductService.create_product(db, ProductCreate(
-            sku="TUB-01", name="Stone tub", slug="stone-tub", material="Marble",
-            category="Bathtub", base_price=Decimal("12000"),
-        ))
+        service = ProductService.create_product(
+            db,
+            ProductCreate(
+                sku="CONSULT-01",
+                name="Consultation",
+                slug="consultation",
+                category="Services",
+                base_price=Decimal("100"),
+                metadata={"duration_minutes": 60},
+            ),
+        )
+        product = ProductService.create_product(
+            db,
+            ProductCreate(
+                sku="TUB-01",
+                name="Stone tub",
+                slug="stone-tub",
+                material="Marble",
+                category="Bathtub",
+                base_price=Decimal("12000"),
+            ),
+        )
         assert service.material is None
         assert service.category == "Services"
         assert service.metadata_["duration_minutes"] == 60

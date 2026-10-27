@@ -21,9 +21,7 @@ class Message(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     conversation_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    external_message_id: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, index=True
-    )
+    external_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
     direction: Mapped[str] = mapped_column(
         String(20), default=MessageDirection.INBOUND.value, nullable=False, index=True

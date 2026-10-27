@@ -30,9 +30,7 @@ class FollowUp(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         String(36), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
     )
 
-    channel: Mapped[str] = mapped_column(
-        String(50), default=Channel.WHATSAPP.value, nullable=False
-    )
+    channel: Mapped[str] = mapped_column(String(50), default=Channel.WHATSAPP.value, nullable=False)
     scheduled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )

@@ -29,10 +29,11 @@ class MockProductSearchTool(Tool):
             return ToolResult(success=False, error=f"Invalid arguments: {exc!s}")
         terms = parsed.query.casefold().split()
         matched = [
-            item for item in self.catalog
-            if any(term in ' '.join(str(v) for v in item.values()).casefold() for term in terms)
+            item
+            for item in self.catalog
+            if any(term in " ".join(str(v) for v in item.values()).casefold() for term in terms)
         ]
-        return ToolResult(success=True, data=matched[:parsed.max_results])
+        return ToolResult(success=True, data=matched[: parsed.max_results])
 
 
 class HealthCheckTool(Tool):
@@ -43,4 +44,6 @@ class HealthCheckTool(Tool):
     args_schema = None
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
-        return ToolResult(success=True, data={"status": "subsystems_operational", "tool": "health_check"})
+        return ToolResult(
+            success=True, data={"status": "subsystems_operational", "tool": "health_check"}
+        )

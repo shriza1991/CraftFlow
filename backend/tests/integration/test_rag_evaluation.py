@@ -1,12 +1,11 @@
 """RAG evaluation dataset and grounding benchmark tests."""
 
 import pytest
-from sqlalchemy.orm import Session
-
 from app.db.models.enums import KnowledgeSourceType
 from app.schemas.rag import RAGQueryRequest
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
 from app.services.rag_service import RAGService
+from sqlalchemy.orm import Session
 
 
 @pytest.fixture(autouse=True)

@@ -27,9 +27,7 @@ class ToolCall(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
     arguments: Mapped[dict] = mapped_column("arguments", JSONType, default=dict, nullable=False)
-    result_summary: Mapped[dict | None] = mapped_column(
-        "result_summary", JSONType, nullable=True
-    )
+    result_summary: Mapped[dict | None] = mapped_column("result_summary", JSONType, nullable=True)
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

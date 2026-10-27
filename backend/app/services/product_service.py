@@ -59,7 +59,11 @@ class ProductService:
             entity_type="Product",
             entity_id=product.id,
             description=f"Created product '{product.name}' with SKU '{product.sku}'",
-            after_state={"sku": product.sku, "name": product.name, "base_price": str(product.base_price)},
+            after_state={
+                "sku": product.sku,
+                "name": product.name,
+                "base_price": str(product.base_price),
+            },
         )
         db.commit()
         return product
@@ -68,9 +72,7 @@ class ProductService:
     def get_product(db: Session, product_id: str) -> Product:
         """Retrieve product by ID or raise NotFoundException."""
         stmt = (
-            select(Product)
-            .where(Product.id == product_id)
-            .options(selectinload(Product.variants))
+            select(Product).where(Product.id == product_id).options(selectinload(Product.variants))
         )
         product = db.scalar(stmt)
         if not product:

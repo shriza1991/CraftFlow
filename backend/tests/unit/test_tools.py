@@ -40,7 +40,7 @@ def test_tool_lookup_missing():
 @pytest.mark.asyncio
 async def test_product_search_tool_execution():
     """Verify MockProductSearchTool validates arguments and returns structured results."""
-    tool = MockProductSearchTool()
+    tool = MockProductSearchTool(catalog=[{"name": "Carrara tub", "material": "marble"}])
     res = await tool.execute({"query": "Carrara", "max_results": 2})
 
     assert res.success is True

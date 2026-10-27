@@ -1,3 +1,5 @@
+> **Historical Ages Art design:** This document includes the original single-business example and planned capabilities. See the root README for the current configurable scope and implementation status.
+
 # Ages Art AI Business Automation — System Architecture
 
 ## 1. Executive Summary & Design Philosophy

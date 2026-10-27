@@ -23,7 +23,7 @@ def list_products(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     active_only: bool = Query(default=True, description="Filter only active products"),
-    material: str | None = Query(default=None, description="Filter by marble/stone material"),
+    material: str | None = Query(default=None, description="Filter by material"),
     category: str | None = Query(default=None, description="Filter by category"),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ProductResponse]:
@@ -50,7 +50,7 @@ def list_products(
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Product",
-    description="Add a new luxury bathtub product and optional initial variants.",
+    description="Add a product or service and optional variants.",
 )
 def create_product(
     product_in: ProductCreate,

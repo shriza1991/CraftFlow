@@ -6,7 +6,7 @@ from app.core.config import Settings, get_settings
 def test_settings_load():
     """Verify settings instantiate with valid defaults."""
     settings = get_settings()
-    assert settings.APP_NAME == "Ages Art AI Business Automation"
+    assert settings.APP_NAME == "CraftFlow"
     assert settings.APP_VERSION == "0.1.0"
     assert settings.LOG_LEVEL == "INFO"
     assert settings.is_testing is True

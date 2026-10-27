@@ -2,7 +2,16 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import business, conversations, customers, followups, health, leads, products
+from app.api.v1 import (
+    business,
+    conversations,
+    customers,
+    followups,
+    health,
+    knowledge,
+    leads,
+    products,
+)
 
 api_router = APIRouter()
 

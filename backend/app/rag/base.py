@@ -15,6 +15,7 @@ class RetrievalChunk(BaseModel):
     score: float = Field(..., description="Relevance or cosine similarity score")
     title: str | None = Field(default=None, description="Title of the source document")
     source_id: str | None = Field(default=None, description="Knowledge source identifier")
+    source_name: str | None = Field(default=None, description="Name of the knowledge source/origin")
     chunk_index: int | None = Field(default=None, description="Index of the chunk in document")
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Metadata tags, e.g. section, tags"

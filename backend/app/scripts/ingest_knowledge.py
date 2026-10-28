@@ -26,38 +26,50 @@ from app.services.knowledge_source_service import KnowledgeSourceService
 logger = get_logger(__name__)
 settings = get_settings()
 
-FOLDER_CONFIG = {
-    "products": {
-        "source_name": "CraftFlow Luxury Bathtub Catalog",
-        "source_type": KnowledgeSourceType.PRODUCT_CATALOG,
-        "document_type": "PRODUCT_GUIDE",
-    },
-    "guides": {
-        "source_name": "CraftFlow Architectural & Care Guides",
-        "source_type": KnowledgeSourceType.INSTALLATION_GUIDE,
-        "document_type": "GUIDE",
-    },
-    "faq": {
-        "source_name": "CraftFlow Client FAQ",
-        "source_type": KnowledgeSourceType.FAQ,
-        "document_type": "FAQ",
-    },
-    "policies": {
-        "source_name": "CraftFlow Business Policies",
-        "source_type": KnowledgeSourceType.BUSINESS_POLICY,
-        "document_type": "POLICY",
-    },
-    "sales": {
-        "source_name": "CraftFlow Sales & Consultation Guide",
-        "source_type": KnowledgeSourceType.SALES_GUIDE,
-        "document_type": "SALES_GUIDE",
-    },
-    "company": {
-        "source_name": "CraftFlow Company Information",
-        "source_type": KnowledgeSourceType.COMPANY_INFORMATION,
-        "document_type": "COMPANY_INFO",
-    },
-}
+
+def get_folder_config(business_name: str | None = None) -> dict[str, dict[str, Any]]:
+    """Build folder mapping to knowledge source names and document types for a business."""
+    name = business_name or settings.BUSINESS_NAME
+    return {
+        "products": {
+            "source_name": f"{name} Product Catalog",
+            "source_type": KnowledgeSourceType.PRODUCT_CATALOG,
+            "document_type": "PRODUCT_GUIDE",
+        },
+        "services": {
+            "source_name": f"{name} Service Catalog",
+            "source_type": KnowledgeSourceType.PRODUCT_CATALOG,
+            "document_type": "SERVICE_CATALOG",
+        },
+        "guides": {
+            "source_name": f"{name} Guides & Documentation",
+            "source_type": KnowledgeSourceType.INSTALLATION_GUIDE,
+            "document_type": "GUIDE",
+        },
+        "faq": {
+            "source_name": f"{name} FAQ",
+            "source_type": KnowledgeSourceType.FAQ,
+            "document_type": "FAQ",
+        },
+        "policies": {
+            "source_name": f"{name} Business Policies",
+            "source_type": KnowledgeSourceType.BUSINESS_POLICY,
+            "document_type": "POLICY",
+        },
+        "sales": {
+            "source_name": f"{name} Sales & Consultation Guide",
+            "source_type": KnowledgeSourceType.SALES_GUIDE,
+            "document_type": "SALES_GUIDE",
+        },
+        "company": {
+            "source_name": f"{name} Company Information",
+            "source_type": KnowledgeSourceType.COMPANY_INFORMATION,
+            "document_type": "COMPANY_INFO",
+        },
+    }
+
+
+FOLDER_CONFIG = get_folder_config()
 
 
 def extract_title_from_markdown(content: str, fallback_filename: str) -> str:
@@ -78,6 +90,7 @@ def ingest_knowledge_base(
     base_dir: Path,
     reset: bool = False,
     dry_run: bool = False,
+    business_name: str | None = None,
 ) -> dict[str, Any]:
     """Ingest markdown files from knowledge base directory."""
     if not base_dir.exists():
@@ -107,6 +120,8 @@ def ingest_knowledge_base(
 
         provider = get_embedding_provider()
         chunker = TextChunker()
+        folder_config = get_folder_config(business_name)
+        b_name = business_name or settings.BUSINESS_NAME
 
         for md_path in md_files:
             # Skip readme files
@@ -114,10 +129,10 @@ def ingest_knowledge_base(
                 continue
 
             folder_name = md_path.parent.name.lower()
-            cfg = FOLDER_CONFIG.get(
+            cfg = folder_config.get(
                 folder_name,
                 {
-                    "source_name": f"CraftFlow {folder_name.title()}",
+                    "source_name": f"{b_name} {folder_name.title()}",
                     "source_type": KnowledgeSourceType.OTHER,
                     "document_type": "GENERAL",
                 },
@@ -212,14 +227,21 @@ def main() -> None:
         help="Inspect files and chunks without writing to the database.",
     )
     parser.add_argument("--dir", type=str, default=None, help="Path to knowledge_base directory.")
+    parser.add_argument(
+        "--business-name",
+        type=str,
+        default=None,
+        help="Name of the business (defaults to BUSINESS_NAME setting).",
+    )
     args = parser.parse_args()
 
     # Determine knowledge directory
     if args.dir:
         kb_path = Path(args.dir)
     else:
-        # Check standard locations
+        # Check settings.KNOWLEDGE_BASE_DIR first, then fallbacks
         candidates = [
+            Path(settings.KNOWLEDGE_BASE_DIR),
             Path("knowledge_base"),
             Path(__file__).resolve().parent.parent.parent.parent / "knowledge_base",
             Path(__file__).resolve().parent.parent.parent / "knowledge_base",
@@ -230,6 +252,7 @@ def main() -> None:
     print("CraftFlow Knowledge Base Ingestion Pipeline (P2)")
     print("=" * 60)
     print(f"Target Directory: {kb_path.resolve()}")
+    print(f"Business Name: {args.business_name or settings.BUSINESS_NAME}")
     print(f"Reset: {args.reset} | Dry-Run: {args.dry_run}")
     print("-" * 60)
 
@@ -237,6 +260,7 @@ def main() -> None:
         base_dir=kb_path.resolve(),
         reset=args.reset,
         dry_run=args.dry_run,
+        business_name=args.business_name,
     )
 
     print("-" * 60)

@@ -20,8 +20,9 @@ class ContextBuilder:
             doc_id = chunk.document_id
             chunk_idx = chunk.chunk_index if chunk.chunk_index is not None else 0
             score = chunk.score
+            source_label = f"{chunk.source_name} - {title}" if chunk.source_name else title
 
-            header = f"[Source {i}: {title} | DocID: {doc_id} | Chunk {chunk_idx} | Relevance: {score:.2f}]"
+            header = f"[Source {i}: {source_label} | DocID: {doc_id} | Chunk {chunk_idx} | Relevance: {score:.2f}]"
             context_blocks.append(f"{header}\n{chunk.content.strip()}")
 
         return "\n\n".join(context_blocks)
@@ -37,12 +38,14 @@ class ContextBuilder:
                 seen.add(key)
                 sources.append(
                     {
-                        "document_id": chunk.document_id,
-                        "chunk_id": chunk.id,
+                        "document_id": str(chunk.document_id),
+                        "chunk_id": str(chunk.id),
                         "title": chunk.title,
                         "score": chunk.score,
-                        "source_id": chunk.source_id,
+                        "source_id": str(chunk.source_id) if chunk.source_id else None,
+                        "source_name": chunk.source_name,
                         "chunk_index": chunk.chunk_index,
+                        "metadata": chunk.metadata,
                     }
                 )
         return sources

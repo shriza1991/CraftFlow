@@ -10,6 +10,7 @@ CraftFlow is a configurable backend platform for business operations and AI-assi
 - **Relational & Vector Data Model**: PostgreSQL 16 with `pgvector` extension for products, product variants, customers, leads, conversations, messages, follow-ups, audit logs, and knowledge base document chunks with vector embeddings.
 - **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`012e8b346d5b`), supporting fresh deployments and upgrades from historical branches.
 - **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
+- **General Grounded RAG & Semantic Search**: Parameterized retrieval and question-answering conditioned strictly on business knowledge context, supporting full document provenance, explicit refusal on unsupported questions, and zero hardcoded product bias.
 
 ---
 
@@ -128,6 +129,63 @@ The backend container uses `docker/entrypoint.sh` to run database migrations aut
 - Health check: `http://localhost:8000/api/v1/health`
 - Readiness check: `http://localhost:8000/api/v1/readiness`
 - Business profile: `http://localhost:8000/api/v1/business`
+
+---
+
+### Step 6: Ingest Business Knowledge (Configurable)
+
+CraftFlow ingests markdown documents from a configurable folder into pgvector. By default, the `knowledge_base/` directory is empty so that a new deployment does not inherit another business's documents by default.
+
+To ingest one of the pre-packaged example businesses:
+
+#### Example A: Ages Art (Luxury Marble Bathtubs & Stone Craftsmanship)
+```powershell
+# Copy Ages Art environment configuration:
+Copy-Item examples/ages-art.env .env
+
+# Ingest Ages Art knowledge documents into PostgreSQL + pgvector:
+python -m app.scripts.ingest_knowledge --dir examples/knowledge/ages-art --business-name "Ages Art"
+```
+
+#### Example B: Northstar Design Studio (Interior Architecture & Consulting Services)
+```powershell
+# Copy Northstar Design Studio environment configuration:
+Copy-Item examples/design-studio.env .env
+
+# Ingest Northstar Design Studio knowledge documents into PostgreSQL + pgvector:
+python -m app.scripts.ingest_knowledge --dir examples/knowledge/design-studio --business-name "Northstar Design Studio"
+```
+
+---
+
+## Knowledge Base & Grounded RAG Architecture
+
+CraftFlow's Retrieval-Augmented Generation (RAG) and semantic search layer is generalized to serve any single configurable business per deployment:
+
+### 1. Zero Hardcoded Bias
+- The RAG system prompt (`build_grounded_system_prompt()`) dynamically parameterizes the business identity (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`) rather than assuming a specific product catalog (e.g. marble bathtubs).
+- Ingestion folder mapping (`get_folder_config()`) dynamically generates source names (e.g. `"<Business> Product Catalog"`, `"<Business> Service Catalog"`, `"<Business> FAQ"`, `"<Business> Business Policies"`).
+
+### 2. Traceable Document Provenance
+All semantic search results (`POST /api/v1/knowledge/search`) and RAG response citations (`POST /api/v1/knowledge/query`) include structured, traceable provenance:
+- `source_name`: Human-readable name of the knowledge source (e.g. "Northstar Design Studio Service Catalog")
+- `source_id`: UUID identifying the originating knowledge source
+- `document_id`: UUID identifying the parent document
+- `chunk_id`: UUID of the specific text chunk
+- `chunk_index`: Position of the chunk in the source document
+- `title`: Markdown document heading / title
+- `score`: Cosine similarity score
+- `metadata`: Source file path, SKU tags, and category metadata
+
+### 3. Grounding Semantics & Verification Disclaimers
+- **Meaning of `grounded=True`**: `grounded=True` signifies that the answer was synthesized strictly conditioned on retrieved context snippets from the knowledge base rather than general model priors. It does **not** assert or imply that the factual claims have been independently or externally verified by humans or external fact-checkers.
+- **Handling Missing & Unsupported Questions**: When an unsupported question is submitted:
+  - If 0 chunks exceed the similarity threshold, the RAG service returns an explicit refusal message: `"No sufficiently relevant business knowledge was found to answer this question."` with `grounded=False` and `sources=[]`.
+  - If chunks are retrieved but lack the required information, the prompt instructs the model to refuse: `"The available business knowledge does not contain enough information to answer this question."` The service detects this insufficient-evidence response and sets `grounded=False` with `sources=[]`.
+
+### 4. Deployment Knowledge Isolation
+- The default `knowledge_base/` directory contains only a README; neither example business's knowledge files are loaded unless explicitly configured via `KNOWLEDGE_BASE_DIR` in `.env` or `--dir` in `ingest_knowledge.py`.
+- Both example knowledge sets (`examples/knowledge/ages-art` and `examples/knowledge/design-studio`) are preserved independently and validated via unit tests.
 
 ---
 

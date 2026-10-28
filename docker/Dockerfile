@@ -19,6 +19,7 @@ COPY backend /app/backend
 COPY migrations /app/migrations
 COPY alembic.ini /app/alembic.ini
 COPY knowledge_base /app/knowledge_base
+COPY examples /app/examples
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 

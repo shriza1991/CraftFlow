@@ -18,6 +18,7 @@ services:
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
       - ./knowledge_base:/app/knowledge_base
+      - ./examples:/app/examples
     depends_on:
       postgres:
         condition: service_healthy

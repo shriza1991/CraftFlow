@@ -8,21 +8,25 @@ from app.rag.base import RAGTrace
 
 
 class RAGSourceCitation(BaseModel):
-    """Source citation identifying the exact document and chunk."""
+    """Source citation identifying the exact document and chunk with provenance metadata."""
 
     document_id: str
     chunk_id: str
     title: str | None = None
     score: float
     source_id: str | None = None
+    source_name: str | None = None
     chunk_index: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RAGQueryRequest(BaseModel):
     """Natural-language question sent to the RAG knowledge assistant."""
 
     question: str = Field(
-        ..., min_length=1, description="Question about bathtubs, stone care, or policies"
+        ...,
+        min_length=1,
+        description="Question about business services, products, guides, or policies",
     )
     top_k: int = Field(default=4, ge=1, le=20, description="Max knowledge snippets to retrieve")
     threshold: float | None = Field(
@@ -39,10 +43,16 @@ class RAGQueryResponse(BaseModel):
 
     answer: str
     grounded: bool = Field(
-        ..., description="Whether answer is grounded in retrieved business context"
+        ...,
+        description=(
+            "Whether the answer was synthesized from retrieved business context. "
+            "Note: grounded=True indicates the response was conditioned on retrieved evidence, "
+            "not that the factual claims have been independently or externally verified."
+        ),
     )
     sources: list[RAGSourceCitation] = Field(
-        default_factory=list, description="Verified citations from retrieved knowledge chunks"
+        default_factory=list,
+        description="Source citations from retrieved knowledge chunks supporting the response",
     )
     retrieval_count: int = Field(
         default=0, description="Number of chunks retrieved passing threshold"

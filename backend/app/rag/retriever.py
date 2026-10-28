@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.db.models.enums import KnowledgeDocumentStatus
 from app.db.models.knowledge_chunk import KnowledgeChunk
 from app.db.models.knowledge_document import KnowledgeDocument
+from app.db.models.knowledge_source import KnowledgeSource
 from app.rag.base import RAGTrace, RetrievalChunk, RetrievalResult, Retriever
 from app.rag.embeddings import EmbeddingProvider, get_embedding_provider
 
@@ -49,16 +50,18 @@ class VectorRetriever(Retriever):
         # 2. Compute cosine distance: chunk.embedding <=> query_vector
         distance = KnowledgeChunk.embedding.cosine_distance(query_vector)
 
-        # 3. Base query joining Document to verify active status and metadata
+        # 3. Base query joining Document and Source to verify active status and provenance
         stmt = (
             select(
                 KnowledgeChunk,
                 KnowledgeDocument.title,
                 KnowledgeDocument.source_id,
                 KnowledgeDocument.document_type,
+                KnowledgeSource.name.label("source_name"),
                 distance.label("distance"),
             )
             .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
+            .outerjoin(KnowledgeSource, KnowledgeDocument.source_id == KnowledgeSource.id)
             .where(KnowledgeDocument.status == KnowledgeDocumentStatus.ACTIVE.value)
         )
 
@@ -75,7 +78,7 @@ class VectorRetriever(Retriever):
         results = self.db.execute(stmt).all()
 
         retrieved_chunks: list[RetrievalChunk] = []
-        for chunk, doc_title, source_id, _doc_type, dist_val in results:
+        for chunk, doc_title, source_id, _doc_type, src_name, dist_val in results:
             # Cosine similarity = 1.0 - cosine_distance
             similarity = round(max(0.0, 1.0 - float(dist_val)), 4)
             if similarity < min_score:
@@ -95,6 +98,7 @@ class VectorRetriever(Retriever):
                     score=similarity,
                     title=doc_title,
                     source_id=source_id,
+                    source_name=src_name,
                     chunk_index=chunk.chunk_index,
                     metadata=chunk.metadata_,
                 )

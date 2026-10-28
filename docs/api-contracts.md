@@ -93,7 +93,7 @@ Standard Error Codes:
 
 ---
 
-## 4. Active P1 Domain Endpoints
+## 4. Active Domain & Knowledge Endpoints
 
 All list endpoints support pagination parameters:
 - `page`: Integer >= 1 (default: 1)
@@ -128,15 +128,27 @@ All list endpoints support pagination parameters:
 - `POST /api/v1/followups`: Schedule a follow-up touchpoint linked to lead and customer.
 - `PATCH /api/v1/followups/{followup_id}`: Update follow-up status (e.g., mark `COMPLETED`). Prevents `COMPLETED` from reverting to `PENDING`.
 
+### 4.6 Business Profile API
+- `GET /api/v1/business`: Retrieve metadata describing the active single business configured for this deployment (`business_name`, `business_description`, `business_industry`).
+
+### 4.7 Knowledge Base & Grounded RAG API
+- `GET /api/v1/knowledge/sources`: List knowledge sources and origins with pagination.
+- `POST /api/v1/knowledge/sources`: Register a knowledge source (e.g., catalog, guides, FAQ, policy).
+- `POST /api/v1/knowledge/documents`: Create a versioned markdown document and index it into pgvector.
+- `GET /api/v1/knowledge/documents/{document_id}`: Retrieve document metadata and indexing status.
+- `POST /api/v1/knowledge/documents/{document_id}/index`: Re-chunk, re-embed, and persist document vectors into pgvector.
+- `POST /api/v1/knowledge/search`: Semantic vector search returning top-k matching chunks with similarity scores and full provenance (`document_id`, `chunk_id`, `source_id`, `source_name`, `title`, `chunk_index`, `metadata`).
+- `POST /api/v1/knowledge/query`: Grounded RAG question-answering assistant.
+  - **Grounding Semantics**: `grounded=true` indicates the response was synthesized and conditioned on retrieved evidence from the business knowledge base. It does **not** indicate that factual claims have been independently or externally verified.
+  - **Missing & Insufficient Evidence**: If 0 relevant chunks match the query threshold, or if retrieved chunks lack necessary facts, the endpoint returns an explicit insufficient-evidence response with `grounded=false` and `sources=[]`.
+
 ---
 
-## 5. Planned Future Endpoints (Milestones P2 → P13)
+## 5. Planned Future Endpoints (Milestones P3 → P13)
 
 | Path | Method | Milestone | Description |
 |---|---|---|---|
-| `/api/v1/rag/search` | POST | P2 | Vector knowledge search |
 | `/api/v1/chat` | POST | P3 | Conversational AI orchestrator endpoint |
 | `/api/v1/webhooks/whatsapp` | GET, POST | P4 | Meta WhatsApp Cloud API webhook |
 | `/api/v1/webhooks/n8n` | POST | P5 | n8n automation relay endpoint |
 | `/api/v1/approvals` | GET, POST | P9 | Human-in-the-loop approval management |
-

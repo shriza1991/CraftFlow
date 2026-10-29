@@ -34,6 +34,14 @@ class AuthenticatedUser(BaseModel):
     username: str
     role: Role
 
+    @property
+    def actor_id(self) -> str:
+        return self.id
+
+    @property
+    def actor_type(self) -> str:
+        return "HUMAN"
+
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 _http_bearer = HTTPBearer(auto_error=False)

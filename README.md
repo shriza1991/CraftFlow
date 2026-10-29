@@ -11,6 +11,7 @@ CraftFlow is a configurable backend platform for business operations and AI-assi
 - **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`012e8b346d5b`), supporting fresh deployments and upgrades from historical branches.
 - **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
 - **General Grounded RAG & Semantic Search**: Parameterized retrieval and question-answering conditioned strictly on business knowledge context, supporting full document provenance, explicit refusal on unsupported questions, and zero hardcoded product bias.
+- **End-to-End Inquiry Workflow & Human Approval**: Deterministic 7-step pipeline accepting customer inquiries, retrieving grounded business knowledge and catalog items, drafting structured responses with traceable citations, creating or updating CRM leads, enforcing human-in-the-loop review before outbound dispatch, and logging telemetry and audit trails.
 - **Role-Based Access Control (RBAC)**: Tiered access for single-business deployments (`admin`, `agent`, `viewer`) using API keys via `Authorization: Bearer <key>` or `X-API-Key: <key>`.
 - **Business Invariants & Audit Trail**: Cross-record integrity enforcement (lead customer ownership, product variant validation, duplicate submission rejection) and automated append-only mutation audit logging.
 
@@ -222,6 +223,82 @@ Every product, customer, lead, and follow-up create or update logs an append-onl
 - Action performed (`CREATE`, `UPDATE`)
 - Affected resource (`resource_type`, `resource_id`)
 - Contextual state snapshots (`before_state`, `after_state`)
+
+---
+
+## End-to-End Customer Inquiry Workflow & Human Approval Gate
+
+CraftFlow implements a complete, deterministic inquiry lifecycle that ingests customer messages, synthesizes evidence-grounded drafts, updates CRM records, and halts outbound dispatch pending human authorization.
+
+```
+[Inbound Inquiry]
+        │
+        ▼
+1. Customer Intake  ──► Upsert Customer profile (email/phone normalization)
+        │
+        ▼
+2. Conversation Intake ──► Register inbound Message on channel (WEBSITE/WHATSAPP)
+        │
+        ▼
+3. Knowledge Retrieval ──► Cosine vector search in pgvector (similarity threshold >= 0.70)
+        │
+        ▼
+4. Catalog Search      ──► Parameterized SQL search on active products & variants
+        │
+        ▼
+5. Response Drafting   ──► Advisory LLM synthesizes draft conditioned on evidence;
+        │                  Draft Message created with status="DRAFT", grounded=True/False
+        ▼
+6. Lead Management     ──► Upsert qualified CRM Lead (status="NEW", priority, channel)
+        │
+        ▼
+7. Outbound Dispatch   ──► HALT: outbound_message_sent=False, approval_status="PENDING_APPROVAL"
+                                    │
+               ┌────────────────────┴────────────────────┐
+               ▼                                         ▼
+   POST .../approve (Human Agent)             POST .../reject (Human Agent)
+   - Mark message status="SENT"               - Mark approval_status="REJECTED"
+   - Dispatch to WhatsApp / Channel           - outbound_message_sent=False
+   - Transition lead to "CONTACTED"           - Audit log recorded
+   - Audit log recorded
+```
+
+### 1. Mandatory Human Approval Gate
+- **No Unapproved Outbound Messages**: The draft response is stored in the database with `status="DRAFT"`, and the workflow sets `outbound_message_sent=False` and `approval_status="PENDING_APPROVAL"`. Under no circumstances is an outbound message dispatched automatically.
+- **Review & Edit Capability**: An authorized agent or admin can review the draft, inspect citations, and optionally provide an edited message body when approving (`POST /api/v1/inquiries/{run_id}/approve`).
+- **Decline & Rejection**: Calling `POST /api/v1/inquiries/{run_id}/reject` marks the run and draft `REJECTED`, blocks dispatch, and documents the reviewer's rationale in the audit trail.
+
+### 2. Evidence Grounding & Traceable Citations
+Draft responses link directly to their source evidence:
+- **Knowledge Base Citations**: Document title, source name, chunk UUID, and cosine similarity score.
+- **Catalog Citations**: Live product SKU, product name, material, base price, and production lead times.
+- If information is missing from the knowledge base, the model generates an explicit refusal rather than fabricating answers.
+
+### 3. Clear State & Failure Visibility
+Each step produces an isolated `WorkflowStepResult` with execution status, timing, and diagnostic details:
+- **`COMPLETED`**: All steps succeeded; draft response is ready for human review (`approval_status="PENDING_APPROVAL"`).
+- **`NEEDS_REVIEW`**: Unsupported questions or insufficient knowledge (0 matching chunks). Generates an explicit insufficient-evidence response (`grounded=False`, `citations=[]`) while preserving the customer and lead in the CRM for human sales follow-up.
+- **`FAILED`**: External provider timeouts, AI errors, or downstream failures. Halts the pipeline, records the failing step and error message in `AgentRun` telemetry, and guarantees that no outbound message is sent.
+
+### 4. SQL & Domain Invariant Safety
+- **No Arbitrary SQL Execution**: The advisory LLM has no database access, execution permissions, or raw SQL capabilities.
+- **Strict Service Boundaries**: All CRM and catalog updates execute through validated backend services (`CustomerService`, `LeadService`, `ProductService`, `KnowledgeService`) using parameterized queries and enforcing relational domain invariants.
+
+### 5. Reproducible Demo (Mock Providers)
+CraftFlow includes a standalone demo script exercising the entire workflow across three key scenarios without requiring external API keys:
+
+```powershell
+# PowerShell (Windows):
+.\.venv\Scripts\python.exe backend/app/scripts/demo_inquiry.py
+
+# Bash (macOS / Linux):
+python backend/app/scripts/demo_inquiry.py
+```
+
+The script demonstrates:
+1. **Scenario 1 (Valid Inquiry)**: Customer intake, vector knowledge retrieval, catalog search, grounded draft creation with citations, lead generation, and human review approval followed by simulated dispatch.
+2. **Scenario 2 (Unsupported Inquiry)**: Zero knowledge matches, producing a clean `NEEDS_REVIEW` state, `grounded=False`, and zero hallucinations, while maintaining the CRM lead for manual follow-up.
+3. **Scenario 3 (Provider Failure)**: Simulated AI provider timeout, capturing step-level failure in `response_drafting`, setting `status="FAILED"`, and showing diagnostics without sending any message.
 
 ---
 

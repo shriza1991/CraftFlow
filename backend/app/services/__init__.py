@@ -4,6 +4,7 @@ from app.services.audit_service import AuditService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.follow_up_service import FollowUpService
+from app.services.inquiry_service import InquiryService
 from app.services.knowledge_document_service import KnowledgeDocumentService
 from app.services.knowledge_ingestion_service import KnowledgeIngestionService
 from app.services.knowledge_source_service import KnowledgeSourceService
@@ -20,6 +21,7 @@ __all__ = [
     "ConversationService",
     "MessageService",
     "FollowUpService",
+    "InquiryService",
     "KnowledgeSourceService",
     "KnowledgeDocumentService",
     "KnowledgeIngestionService",

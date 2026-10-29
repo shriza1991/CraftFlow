@@ -8,6 +8,7 @@ from app.api.v1 import (
     customers,
     followups,
     health,
+    inquiries,
     knowledge,
     leads,
     products,
@@ -24,3 +25,4 @@ api_router.include_router(leads.router, prefix="/api/v1")
 api_router.include_router(conversations.router, prefix="/api/v1")
 api_router.include_router(followups.router, prefix="/api/v1")
 api_router.include_router(knowledge.router, prefix="/api/v1")
+api_router.include_router(inquiries.router, prefix="/api/v1")

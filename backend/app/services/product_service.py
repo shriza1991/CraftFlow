@@ -1,6 +1,6 @@
 """Product domain service implementing business operations and catalog querying."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -157,6 +157,32 @@ class ProductService:
             ).all()
         )
         return items, total
+
+    @staticmethod
+    def search_catalog(
+        db: Session,
+        query: str,
+        limit: int = 5,
+        active_only: bool = True,
+    ) -> list[Product]:
+        """Search active catalog products by keywords in name, material, category, SKU, or description."""
+        stmt = select(Product).options(selectinload(Product.variants))
+        if active_only:
+            stmt = stmt.where(Product.is_active.is_(True))
+
+        terms = [t.strip() for t in query.split() if len(t.strip()) > 2]
+        if terms:
+            conditions = []
+            for term in terms[:5]:
+                pattern = f"%{term}%"
+                conditions.append(Product.name.ilike(pattern))
+                conditions.append(Product.material.ilike(pattern))
+                conditions.append(Product.sku.ilike(pattern))
+                conditions.append(Product.category.ilike(pattern))
+                conditions.append(Product.description.ilike(pattern))
+            stmt = stmt.where(or_(*conditions))
+
+        return list(db.scalars(stmt.order_by(Product.name.asc()).limit(limit)).all())
 
     @staticmethod
     def update_product(

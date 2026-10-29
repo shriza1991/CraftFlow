@@ -84,6 +84,7 @@ Each API key maps to one of three roles:
 | `/api/v1/leads` | `viewer`, `agent`, `admin` | `agent`, `admin` |
 | `/api/v1/followups` | `viewer`, `agent`, `admin` | `agent`, `admin` |
 | `/api/v1/conversations` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/inquiries` | `viewer`, `agent`, `admin` | `agent`, `admin` |
 | `/api/v1/knowledge` | `viewer`, `agent`, `admin` | `admin` |
 
 ### 3.3 Documented Development API Keys
@@ -208,6 +209,79 @@ All list endpoints support pagination parameters:
 - `POST /api/v1/knowledge/query`: Grounded RAG question-answering assistant.
   - **Grounding Semantics**: `grounded=true` indicates the response was synthesized and conditioned on retrieved evidence from the business knowledge base. It does **not** indicate that factual claims have been independently or externally verified.
   - **Missing & Insufficient Evidence**: If 0 relevant chunks match the query threshold, or if retrieved chunks lack necessary facts, the endpoint returns an explicit insufficient-evidence response with `grounded=false` and `sources=[]`.
+
+### 6.8 Inquiry Workflow & Human Approval API
+
+Enforces an end-to-end customer inquiry workflow with strict human-in-the-loop authorization prior to sending any outbound message:
+
+- `POST /api/v1/inquiries`: Ingest customer inquiry, run knowledge retrieval & catalog search, draft a grounded response with structured evidence citations, upsert customer & lead records, and halt outbound dispatch pending human review (`status="COMPLETED"` or `"NEEDS_REVIEW"`, `outbound_message_sent=false`, `approval_status="PENDING_APPROVAL"`).
+  - **Permissions**: `agent`, `admin`
+  - **Request Body**:
+    ```json
+    {
+      "customer": {
+        "name": "Eleanor Vance",
+        "email": "eleanor@example.com",
+        "phone": "+14155552671",
+        "location": "San Francisco, CA"
+      },
+      "message": {
+        "content": "Hi, what are your lead times and pricing for Carrara marble bathtubs?",
+        "channel": "WEBSITE",
+        "sender_name": "Eleanor Vance"
+      },
+      "preferred_channel": "WEBSITE"
+    }
+    ```
+  - **Response Body (`InquiryWorkflowResponse`)**:
+    - `run_id`: UUID of the workflow execution (`AgentRun`).
+    - `status`: `COMPLETED`, `NEEDS_REVIEW`, or `FAILED`.
+    - `customer_id`, `conversation_id`, `lead_id`.
+    - `draft`:
+      - `content`: Synthesized response text.
+      - `grounded`: `true` if supported by knowledge; `false` if unsupported.
+      - `approval_status`: `"PENDING_APPROVAL"`.
+      - `outbound_message_sent`: `false` (always `false` until approved).
+      - `citations`: Traceable list of `EVIDENCE_SOURCE` items (`KNOWLEDGE` or `CATALOG`).
+    - `steps`: Array of individual `WorkflowStepResult` records with step name, status, and diagnostic data.
+
+- `GET /api/v1/inquiries/{run_id}`: Retrieve workflow execution telemetry, draft response status, and step diagnostics.
+  - **Permissions**: `viewer`, `agent`, `admin`
+
+- `POST /api/v1/inquiries/{run_id}/approve`: Human review approval gate. Approves the draft response, dispatches the outbound message, updates message status to `SENT`, transitions the CRM lead to `CONTACTED`, and logs an audit trail.
+  - **Permissions**: `agent`, `admin`
+  - **Request Body**:
+    ```json
+    {
+      "custom_message": "Optional overridden message text reviewed and edited by human agent.",
+      "reviewer_notes": "Verified availability with procurement team."
+    }
+    ```
+  - **Response Body**:
+    ```json
+    {
+      "run_id": "f15f2fbe-e527-4d0b-bf5d-09eeefa4ac13",
+      "approval_status": "APPROVED",
+      "outbound_message_sent": true,
+      "message_id": "54aecc9a-1a67-441c-a172-3e98f7cd0ed3",
+      "lead_id": "d404d397-bc64-43ec-982b-c785862cc97c",
+      "lead_status": "CONTACTED",
+      "sent_content": "Thank you for contacting us...",
+      "approved_by": "cf_agent_dev_key_2026",
+      "approved_at": "2026-10-29T14:00:00Z"
+    }
+    ```
+
+- `POST /api/v1/inquiries/{run_id}/reject`: Human review decline gate. Declines the draft response, ensures no outbound message is sent (`approval_status="REJECTED"`), and records the reviewer's rationale in the audit trail.
+  - **Permissions**: `agent`, `admin`
+  - **Request Body**:
+    ```json
+    {
+      "reason": "Customer inquiry is outside our geographical service area."
+    }
+    ```
+
+---
 
 ---
 

@@ -12,6 +12,7 @@ CraftFlow is a configurable backend platform for business operations and AI-assi
 - **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
 - **General Grounded RAG & Semantic Search**: Parameterized retrieval and question-answering conditioned strictly on business knowledge context, supporting full document provenance, explicit refusal on unsupported questions, and zero hardcoded product bias.
 - **End-to-End Inquiry Workflow & Human Approval**: Deterministic 7-step pipeline accepting customer inquiries, retrieving grounded business knowledge and catalog items, drafting structured responses with traceable citations, creating or updating CRM leads, enforcing human-in-the-loop review before outbound dispatch, and logging telemetry and audit trails.
+- **n8n Integration & Follow-up Orchestration**: Narrow automation boundary with version-controlled n8n workflow export (`workflows/n8n/follow_up_execution_workflow.json`). The backend remains strictly responsible for business rules, human approval state, and delivery records, supporting authenticated webhooks, event identifiers, duplicate protection, bounded retries, and visible delivery status.
 - **Role-Based Access Control (RBAC)**: Tiered access for single-business deployments (`admin`, `agent`, `viewer`) using API keys via `Authorization: Bearer <key>` or `X-API-Key: <key>`.
 - **Business Invariants & Audit Trail**: Cross-record integrity enforcement (lead customer ownership, product variant validation, duplicate submission rejection) and automated append-only mutation audit logging.
 
@@ -299,6 +300,62 @@ The script demonstrates:
 1. **Scenario 1 (Valid Inquiry)**: Customer intake, vector knowledge retrieval, catalog search, grounded draft creation with citations, lead generation, and human review approval followed by simulated dispatch.
 2. **Scenario 2 (Unsupported Inquiry)**: Zero knowledge matches, producing a clean `NEEDS_REVIEW` state, `grounded=False`, and zero hallucinations, while maintaining the CRM lead for manual follow-up.
 3. **Scenario 3 (Provider Failure)**: Simulated AI provider timeout, capturing step-level failure in `response_drafting`, setting `status="FAILED"`, and showing diagnostics without sending any message.
+
+---
+
+## n8n Follow-up Automation & Delivery Integration
+
+CraftFlow integrates with [n8n](https://n8n.io) for external scheduling and event relay while maintaining strict backend authority over business invariants, approval states, and delivery records.
+
+### 1. Narrow Automation Boundary
+- **Backend Responsibility**: The FastAPI backend enforces whether a follow-up is eligible for delivery (must be `approval_status="APPROVED"` and not `CANCELLED`), manages duplicate event protection, records all delivery attempts, and appends messages to conversation history.
+- **n8n Responsibility**: n8n triggers the scheduled webhook relay, executes backoff delay between retry attempts, and manages external messaging nodes.
+- **Workflow Export**: A production-ready, version-controlled n8n workflow export is provided in [`workflows/n8n/follow_up_execution_workflow.json`](./workflows/n8n/follow_up_execution_workflow.json).
+
+### 2. Security & Webhook Contract
+Incoming n8n webhooks (`POST /api/v1/webhooks/n8n`) require authentication:
+- **Header**: `X-Webhook-Secret: <N8N_WEBHOOK_SECRET>` (or `Authorization: Bearer <N8N_WEBHOOK_SECRET>`).
+- Calls missing or presenting invalid secrets are rejected immediately with HTTP 401 `WEBHOOK_AUTHENTICATION_FAILED`.
+
+### 3. Event Identifiers & Duplicate Protection
+- Every webhook payload includes a mandatory `event_id` (e.g. `evt_01J9...`).
+- **Duplicate Execution Prevention**: If an event ID was previously processed, the backend returns `status="DUPLICATE_IGNORED"` with `duplicate=true` and current delivery status without re-dispatching messages.
+- **Duplicate Follow-up Prevention**: Repeated `followup.schedule` events matching an existing event or scheduled timeslot return the existing record without creating duplicates.
+- **Already-Completed Protection**: Follow-ups that have already reached `COMPLETED` return `status="ALREADY_COMPLETED"` if re-triggered.
+
+### 4. Bounded Failure Handling & Retries
+- When message delivery encounters a transient failure and `attempt < max_retries`, the backend returns `status="RETRYING"` with `retryable=true` and sets follow-up status to `PROCESSING`.
+- n8n pauses via a Wait node and increments the attempt counter for the next retry.
+- When `attempt >= max_retries` (default: 3), the backend transitions the follow-up to `FAILED`, sets `failure_reason="Max retries (3) exhausted..."`, and returns `retryable=false`.
+
+### 5. Visible Delivery Status in CRM
+The complete delivery history is visible at all times via `GET /api/v1/followups/{id}/delivery`:
+- `delivery_status`: `PENDING`, `DELIVERED`, `RETRYING`, `FAILED`, or `CANCELLED`.
+- `delivery_attempts`: Total attempts executed.
+- `delivery_records`: Chronological list of all attempts with timestamp, provider message ID, recipient, error details, and retry eligibility.
+
+### 6. Mock vs. Live Messaging Setup
+- **Mock Provider (Default / Offline)**: `WHATSAPP_PROVIDER=mock` simulates instant delivery with mock IDs (`mock_wamid_<hash>`) and supports deterministic error injection for testing.
+- **Live Provider (Production)**: Configure `WHATSAPP_PROVIDER=meta` with `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`. Full setup instructions are documented in [`workflows/n8n/README.md`](./workflows/n8n/README.md).
+
+### 7. Running the n8n Follow-up Demo
+
+Test the complete lifecycle offline without external accounts or services:
+
+```powershell
+# PowerShell (Windows):
+.\.venv\Scripts\python.exe backend/app/scripts/demo_n8n_followup.py
+
+# Bash (macOS / Linux):
+python backend/app/scripts/demo_n8n_followup.py
+```
+
+The demo demonstrates:
+1. Approved follow-up moving through n8n automation and mock delivery.
+2. Repeated event ID duplicate protection (no duplicate sends).
+3. Cancelled follow-up delivery rejection.
+4. Transient delivery failure, retry progression, and bounded failure exhaustion (max 3 retries).
+5. Unapproved follow-up protection (enforcing backend approval gate).
 
 ---
 

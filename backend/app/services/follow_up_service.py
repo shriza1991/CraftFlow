@@ -1,19 +1,25 @@
 """FollowUp domain service managing scheduled client touchpoints."""
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundException, ValidationException
+from app.core.logging import get_logger
 from app.db.models.conversation import Conversation
 from app.db.models.customer import Customer
 from app.db.models.enums import ActorType, FollowUpStatus
 from app.db.models.follow_up import FollowUp
 from app.db.models.lead import Lead
+from app.integrations.n8n.client import N8nWebhookClient
 from app.schemas.follow_up import FollowUpCreate, FollowUpUpdate
+from app.schemas.n8n_webhook import DeliveryRecord, FollowUpDeliveryStatusResponse
 from app.schemas.pagination import PageParams
 from app.services.audit_service import AuditService
+
+logger = get_logger(__name__)
 
 
 class FollowUpService:
@@ -98,9 +104,17 @@ class FollowUpService:
                 else str(followup_in.status)
             )
 
+            meta = dict(followup_in.metadata_) if followup_in.metadata_ else {}
+            meta.setdefault("approval_status", "PENDING_APPROVAL")
+            meta.setdefault("delivery_status", "PENDING")
+            meta.setdefault("delivery_attempts", 0)
+            meta.setdefault("max_retries", 3)
+            meta.setdefault("delivery_records", [])
+            meta.setdefault("processed_event_ids", [])
+
             follow_up = FollowUp(
                 **data,
-                metadata_=followup_in.metadata_,
+                metadata_=meta,
             )
             db.add(follow_up)
 
@@ -247,3 +261,185 @@ class FollowUpService:
         except Exception:
             db.rollback()
             raise
+
+    @staticmethod
+    async def approve_followup(
+        db: Session,
+        followup_id: str,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.HUMAN,
+        trigger_n8n: bool = True,
+        reviewer_notes: str | None = None,
+    ) -> FollowUp:
+        """Human approval action: approve follow-up for execution and optionally trigger n8n."""
+        follow_up = FollowUpService.get_followup(db, followup_id)
+
+        # Enforce business invariant: cannot approve completed or cancelled follow-ups
+        if follow_up.status == FollowUpStatus.CANCELLED.value:
+            raise ValidationException(
+                message="Cannot approve a cancelled follow-up.",
+                details={"followup_id": followup_id, "status": follow_up.status},
+            )
+        if follow_up.status == FollowUpStatus.COMPLETED.value:
+            raise ValidationException(
+                message="Cannot approve an already completed follow-up.",
+                details={"followup_id": followup_id, "status": follow_up.status},
+            )
+
+        meta = dict(follow_up.metadata_) if follow_up.metadata_ else {}
+        before_state = {
+            "status": follow_up.status,
+            "approval_status": meta.get("approval_status", "PENDING_APPROVAL"),
+        }
+
+        meta["approval_status"] = "APPROVED"
+        meta["approved_by"] = actor_id or "system"
+        meta["approved_at"] = datetime.now(UTC).isoformat()
+        if reviewer_notes:
+            meta["reviewer_notes"] = reviewer_notes
+
+        # Transition status to SCHEDULED if it was PENDING
+        if follow_up.status == FollowUpStatus.PENDING.value:
+            follow_up.status = FollowUpStatus.SCHEDULED.value
+
+        follow_up.metadata_ = meta
+        db.flush()
+        db.refresh(follow_up)
+
+        AuditService.record(
+            db=db,
+            action="FOLLOW_UP_APPROVED",
+            entity_type="FollowUp",
+            entity_id=follow_up.id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            description=f"Approved follow-up '{follow_up.id}' for lead '{follow_up.lead_id}'.",
+            before_state=before_state,
+            after_state={
+                "status": follow_up.status,
+                "approval_status": "APPROVED",
+                "approved_by": meta["approved_by"],
+            },
+        )
+        db.commit()
+
+        # Trigger n8n workflow if requested
+        if trigger_n8n:
+            try:
+                client = N8nWebhookClient()
+                customer = db.get(Customer, follow_up.customer_id)
+                recipient = customer.phone or customer.email if customer else None
+                event_payload = {
+                    "event_id": f"evt_{uuid4().hex[:16]}",
+                    "event_type": "followup.execute",
+                    "followup_id": follow_up.id,
+                    "customer_id": follow_up.customer_id,
+                    "lead_id": follow_up.lead_id,
+                    "channel": follow_up.channel,
+                    "scheduled_at": follow_up.scheduled_at.isoformat(),
+                    "reason": follow_up.reason,
+                    "message": follow_up.message_template
+                    or f"Follow-up regarding {follow_up.reason}",
+                    "recipient": recipient,
+                    "approval_status": "APPROVED",
+                }
+                await client.trigger_workflow(
+                    webhook_path="webhook/craftflow-followup",
+                    payload=event_payload,
+                )
+            except Exception as exc:
+                logger.warning(f"Non-blocking n8n webhook dispatch warning: {exc}")
+
+        return follow_up
+
+    @staticmethod
+    def cancel_followup(
+        db: Session,
+        followup_id: str,
+        reason: str,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.HUMAN,
+    ) -> FollowUp:
+        """Cancel a pending or scheduled follow-up."""
+        follow_up = FollowUpService.get_followup(db, followup_id)
+
+        if follow_up.status == FollowUpStatus.COMPLETED.value:
+            raise ValidationException(
+                message="Cannot cancel an already completed follow-up.",
+                details={"followup_id": followup_id, "status": follow_up.status},
+            )
+
+        meta = dict(follow_up.metadata_) if follow_up.metadata_ else {}
+        before_state = {
+            "status": follow_up.status,
+            "approval_status": meta.get("approval_status", "PENDING_APPROVAL"),
+        }
+
+        follow_up.status = FollowUpStatus.CANCELLED.value
+        meta["approval_status"] = "CANCELLED"
+        meta["delivery_status"] = "CANCELLED"
+        meta["cancellation_reason"] = reason
+        follow_up.failure_reason = f"Cancelled: {reason}"
+        follow_up.metadata_ = meta
+
+        db.flush()
+        db.refresh(follow_up)
+
+        AuditService.record(
+            db=db,
+            action="FOLLOW_UP_CANCELLED",
+            entity_type="FollowUp",
+            entity_id=follow_up.id,
+            actor_id=actor_id,
+            actor_type=actor_type,
+            description=f"Cancelled follow-up '{follow_up.id}': {reason}",
+            before_state=before_state,
+            after_state={
+                "status": follow_up.status,
+                "approval_status": "CANCELLED",
+                "cancellation_reason": reason,
+            },
+        )
+        db.commit()
+        return follow_up
+
+    @staticmethod
+    def get_delivery_status(db: Session, followup_id: str) -> FollowUpDeliveryStatusResponse:
+        """Retrieve structured delivery status, attempts, and delivery audit history."""
+        follow_up = FollowUpService.get_followup(db, followup_id)
+        meta = dict(follow_up.metadata_) if follow_up.metadata_ else {}
+
+        raw_records = meta.get("delivery_records", [])
+        parsed_records: list[DeliveryRecord] = []
+        for rec in raw_records:
+            try:
+                parsed_records.append(
+                    DeliveryRecord(
+                        event_id=rec.get("event_id", "unknown"),
+                        attempt=rec.get("attempt", 1),
+                        status=rec.get("status", "PENDING"),
+                        timestamp=datetime.fromisoformat(rec["timestamp"])
+                        if isinstance(rec.get("timestamp"), str)
+                        else rec.get("timestamp", datetime.now(UTC)),
+                        provider=rec.get("provider", "mock"),
+                        provider_message_id=rec.get("provider_message_id"),
+                        recipient=rec.get("recipient"),
+                        error=rec.get("error"),
+                        retryable=rec.get("retryable", False),
+                    )
+                )
+            except Exception as parse_err:
+                logger.debug(f"Could not parse delivery record: {parse_err}")
+
+        return FollowUpDeliveryStatusResponse(
+            followup_id=follow_up.id,
+            status=follow_up.status,
+            approval_status=meta.get("approval_status", "PENDING_APPROVAL"),
+            delivery_status=meta.get("delivery_status", "PENDING"),
+            delivery_attempts=meta.get("delivery_attempts", 0),
+            max_retries=meta.get("max_retries", 3),
+            completed_at=follow_up.completed_at,
+            failure_reason=follow_up.failure_reason,
+            last_event_id=meta.get("last_event_id"),
+            delivery_records=parsed_records,
+        )

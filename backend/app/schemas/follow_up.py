@@ -49,3 +49,22 @@ class FollowUpResponse(FollowUpBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class FollowUpApproveRequest(BaseModel):
+    """Request payload to approve a scheduled follow-up."""
+
+    trigger_n8n: bool = Field(
+        default=True, description="Whether to trigger external n8n workflow upon approval"
+    )
+    reviewer_notes: str | None = Field(
+        default=None, description="Optional notes from the approving reviewer"
+    )
+
+
+class FollowUpCancelRequest(BaseModel):
+    """Request payload to cancel a scheduled follow-up."""
+
+    reason: str = Field(
+        ..., min_length=1, max_length=500, description="Reason for cancelling the follow-up"
+    )

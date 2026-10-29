@@ -12,6 +12,7 @@ from app.api.v1 import (
     knowledge,
     leads,
     products,
+    webhooks,
 )
 
 api_router = APIRouter()
@@ -26,3 +27,4 @@ api_router.include_router(conversations.router, prefix="/api/v1")
 api_router.include_router(followups.router, prefix="/api/v1")
 api_router.include_router(knowledge.router, prefix="/api/v1")
 api_router.include_router(inquiries.router, prefix="/api/v1")
+api_router.include_router(webhooks.router, prefix="/api/v1")

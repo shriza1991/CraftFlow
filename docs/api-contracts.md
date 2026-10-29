@@ -85,6 +85,7 @@ Each API key maps to one of three roles:
 | `/api/v1/followups` | `viewer`, `agent`, `admin` | `agent`, `admin` |
 | `/api/v1/conversations` | `viewer`, `agent`, `admin` | `agent`, `admin` |
 | `/api/v1/inquiries` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/webhooks/n8n` | N/A | Authenticated via `X-Webhook-Secret` |
 | `/api/v1/knowledge` | `viewer`, `agent`, `admin` | `admin` |
 
 ### 3.3 Documented Development API Keys
@@ -195,6 +196,9 @@ All list endpoints support pagination parameters:
 - `GET /api/v1/followups`: List scheduled follow-ups (supports `status`, `lead_id`, `customer_id`, pagination).
 - `POST /api/v1/followups`: Schedule a follow-up touchpoint linked to lead and customer.
 - `PATCH /api/v1/followups/{followup_id}`: Update follow-up status (e.g., mark `COMPLETED`). Prevents `COMPLETED` from reverting to `PENDING`.
+- `POST /api/v1/followups/{followup_id}/approve`: Human approval gate: approve scheduled follow-up for execution and optionally trigger n8n relay (`require_agent_or_admin`).
+- `POST /api/v1/followups/{followup_id}/cancel`: Cancel a scheduled follow-up, preventing outbound delivery (`require_agent_or_admin`).
+- `GET /api/v1/followups/{followup_id}/delivery`: Retrieve visible delivery status, attempts, retry bounds, and delivery audit history (`require_viewer_or_above`).
 
 ### 4.6 Business Profile API
 - `GET /api/v1/business`: Retrieve metadata describing the active single business configured for this deployment (`business_name`, `business_description`, `business_industry`).
@@ -281,7 +285,61 @@ Enforces an end-to-end customer inquiry workflow with strict human-in-the-loop a
     }
     ```
 
----
+### 6.9 n8n Automation Relay Webhook API
+
+Authenticated webhook integration for n8n automation relay. Enforces backend business rules, human approval verification, idempotency protection, bounded retries, and visible delivery records:
+
+- `POST /api/v1/webhooks/n8n`:
+  - **Authentication**: `X-Webhook-Secret: <N8N_WEBHOOK_SECRET>` (returns HTTP 401 `WEBHOOK_AUTHENTICATION_FAILED` if missing or invalid).
+  - **Request Body (`N8nFollowUpEventRequest`)**:
+    ```json
+    {
+      "event_id": "evt_01J9ABC123456789",
+      "event_type": "followup.execute",
+      "followup_id": "9b480cef-ff98-4ed4-89d6-f16a5210877e",
+      "attempt": 1,
+      "max_retries": 3,
+      "payload": {
+        "simulate_failure": false
+      }
+    }
+    ```
+  - **Supported `event_type` actions**:
+    - `"followup.execute"`: Verify approval, deliver follow-up message via configured provider, record delivery attempt, and update CRM status.
+    - `"followup.schedule"`: Schedule a follow-up with automatic deduplication preventing duplicate creation.
+    - `"followup.cancel"`: Cancel a follow-up.
+  - **Response Body (`N8nFollowUpEventResponse`)**:
+    ```json
+    {
+      "event_id": "evt_01J9ABC123456789",
+      "followup_id": "9b480cef-ff98-4ed4-89d6-f16a5210877e",
+      "status": "DELIVERED",
+      "delivery_status": "DELIVERED",
+      "attempt": 1,
+      "max_retries": 3,
+      "retryable": false,
+      "message": "Follow-up message delivered successfully.",
+      "duplicate": false,
+      "delivery_record": {
+        "event_id": "evt_01J9ABC123456789",
+        "attempt": 1,
+        "status": "DELIVERED",
+        "timestamp": "2026-10-29T15:45:00Z",
+        "provider": "mock",
+        "provider_message_id": "mock_wamid_03b46ecb8c69",
+        "recipient": "+14155552671",
+        "error": null,
+        "retryable": false
+      },
+      "timestamp": "2026-10-29T15:45:00Z"
+    }
+    ```
+  - **Guarantees & Enforced Invariants**:
+    - **Approval Gate**: Follow-ups with `approval_status != "APPROVED"` return `status="UNAPPROVED"` with `delivery_status="PENDING_APPROVAL"`; zero messages dispatched.
+    - **Cancellation Guard**: Follow-ups with `status == "CANCELLED"` return `status="CANCELLED"`; zero messages dispatched.
+    - **Event Idempotency**: Repeated webhooks with an already-processed `event_id` return `status="DUPLICATE_IGNORED"` with `duplicate=true`; zero duplicate sends.
+    - **Bounded Retries**: Transient failures return `status="RETRYING"` with `retryable=true` until `attempt >= max_retries`, at which point the follow-up transitions to `status="FAILED"` with `retryable=false`.
+    - **Observability**: Every attempt appends an immutable `DeliveryRecord` visible in `FollowUp.metadata["delivery_records"]` and via `GET /api/v1/followups/{id}/delivery`.
 
 ---
 
@@ -291,5 +349,4 @@ Enforces an end-to-end customer inquiry workflow with strict human-in-the-loop a
 |---|---|---|---|
 | `/api/v1/chat` | POST | P3 | Conversational AI orchestrator endpoint |
 | `/api/v1/webhooks/whatsapp` | GET, POST | P4 | Meta WhatsApp Cloud API webhook |
-| `/api/v1/webhooks/n8n` | POST | P5 | n8n automation relay endpoint |
 | `/api/v1/approvals` | GET, POST | P9 | Human-in-the-loop approval management |

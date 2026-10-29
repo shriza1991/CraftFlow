@@ -1,0 +1,269 @@
+{
+  "name": "CraftFlow Approved Follow-up Delivery & Retry Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "craftflow-followup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1d3a5e82-2c67-4e31-9f22-1b6a7a0b81c1",
+      "name": "Webhook: Inbound Follow-up Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "craftflow-followup"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare structured follow-up event and headers\nconst input = $input.first().json.body || $input.first().json;\n\nconst eventId = input.event_id || ('evt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36));\nconst attempt = input.attempt || 1;\nconst maxRetries = input.max_retries || 3;\n\nreturn [{\n  json: {\n    event_id: eventId,\n    event_type: 'followup.execute',\n    followup_id: input.followup_id,\n    attempt: attempt,\n    max_retries: maxRetries,\n    payload: input.payload || {},\n    craftflow_api_url: $env.CRAFTFLOW_API_URL || 'http://localhost:8000',\n    webhook_secret: $env.N8N_WEBHOOK_SECRET || 'dev_n8n_webhook_secret_placeholder'\n  }\n}];"
+      },
+      "id": "5f9b3e10-6a72-4d51-8b33-2c7b8a1c92d2",
+      "name": "Prepare Event & Headers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.craftflow_api_url }}/api/v1/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Secret",
+              "value": "={{ $json.webhook_secret }}"
+            },
+            {
+              "name": "X-Request-ID",
+              "value": "={{ $json.event_id }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event_id\": \"{{ $json.event_id }}\",\n  \"event_type\": \"{{ $json.event_type }}\",\n  \"followup_id\": \"{{ $json.followup_id }}\",\n  \"attempt\": {{ $json.attempt }},\n  \"max_retries\": {{ $json.max_retries }},\n  \"payload\": {{ JSON.stringify($json.payload) }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "8a7c2d33-4b91-4c62-9e44-3d8e9b2a03f3",
+      "name": "CraftFlow Backend Relay",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "DELIVERED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "RETRYING",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "CANCELLED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 3
+        }
+      },
+      "id": "9b8e1f44-5c82-4e73-af55-4e9f0c3b14a4",
+      "name": "Route Delivery Outcome",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "2c9f4a55-6d93-4f84-bf66-5f0a1d4c25b5",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Increment attempt counter for bounded retry\nconst prev = $input.first().json;\nreturn [{\n  json: {\n    ...prev,\n    attempt: (prev.attempt || 1) + 1\n  }\n}];"
+      },
+      "id": "3d0a5b66-7e04-4a95-cf77-6a1b2e5d36c6",
+      "name": "Increment Retry Counter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"{{ $json.status }}\",\n  \"delivery_status\": \"{{ $json.delivery_status }}\",\n  \"event_id\": \"{{ $json.event_id }}\",\n  \"followup_id\": \"{{ $json.followup_id }}\",\n  \"attempt\": {{ $json.attempt }},\n  \"max_retries\": {{ $json.max_retries }},\n  \"retryable\": {{ $json.retryable || false }},\n  \"message\": \"{{ $json.message }}\"\n}",
+        "options": {}
+      },
+      "id": "4e1b6c77-8f15-4b06-df88-7b2c3f6e47d7",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 140]
+    }
+  ],
+  "connections": {
+    "Webhook: Inbound Follow-up Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Event & Headers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Event & Headers": {
+      "main": [
+        [
+          {
+            "node": "CraftFlow Backend Relay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CraftFlow Backend Relay": {
+      "main": [
+        [
+          {
+            "node": "Route Delivery Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Delivery Outcome": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Before Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          {
+            "node": "Increment Retry Counter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Retry Counter": {
+      "main": [
+        [
+          {
+            "node": "CraftFlow Backend Relay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
+

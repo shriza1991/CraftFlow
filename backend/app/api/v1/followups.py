@@ -5,8 +5,9 @@ import math
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db
-from app.db.models.enums import FollowUpStatus
+from app.core.dependencies import get_db, require_agent_or_admin, require_viewer_or_above
+from app.core.security import AuthenticatedUser, Role
+from app.db.models.enums import ActorType, FollowUpStatus
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.pagination import PageParams, PaginatedResponse
 from app.services.follow_up_service import FollowUpService
@@ -25,6 +26,7 @@ def list_followups(
     page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
     status: FollowUpStatus | None = Query(default=None, description="Filter by follow-up status"),
     lead_id: str | None = Query(default=None, description="Filter by lead ID"),
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[FollowUpResponse]:
     params = PageParams(page=page, page_size=page_size)
@@ -53,9 +55,16 @@ def list_followups(
 )
 def schedule_followup(
     followup_in: FollowUpCreate,
+    user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> FollowUpResponse:
-    follow_up = FollowUpService.schedule_followup(db=db, followup_in=followup_in)
+    actor_type = ActorType.ADMIN.value if user.role == Role.ADMIN else ActorType.HUMAN.value
+    follow_up = FollowUpService.schedule_followup(
+        db=db,
+        followup_in=followup_in,
+        actor_id=user.username,
+        actor_type=actor_type,
+    )
     return FollowUpResponse.model_validate(follow_up)
 
 
@@ -68,7 +77,15 @@ def schedule_followup(
 def update_followup(
     followup_id: str,
     updates: FollowUpUpdate,
+    user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> FollowUpResponse:
-    follow_up = FollowUpService.update_followup(db=db, followup_id=followup_id, updates=updates)
+    actor_type = ActorType.ADMIN.value if user.role == Role.ADMIN else ActorType.HUMAN.value
+    follow_up = FollowUpService.update_followup(
+        db=db,
+        followup_id=followup_id,
+        updates=updates,
+        actor_id=user.username,
+        actor_type=actor_type,
+    )
     return FollowUpResponse.model_validate(follow_up)

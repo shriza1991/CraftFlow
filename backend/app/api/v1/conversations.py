@@ -5,7 +5,8 @@ import math
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_db, require_agent_or_admin, require_viewer_or_above
+from app.core.security import AuthenticatedUser
 from app.schemas.conversation import ConversationCreate, ConversationResponse
 from app.schemas.message import MessageCreate, MessageResponse
 from app.schemas.pagination import PageParams, PaginatedResponse
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/conversations", tags=["Conversations & Messages"])
 )
 def create_conversation(
     conv_in: ConversationCreate,
+    _user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> ConversationResponse:
     conv = ConversationService.create_conversation(db=db, conv_in=conv_in)
@@ -38,6 +40,7 @@ def create_conversation(
 )
 def get_conversation(
     conversation_id: str,
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> ConversationResponse:
     conv = ConversationService.get_conversation(db=db, conversation_id=conversation_id)
@@ -54,6 +57,7 @@ def list_messages(
     conversation_id: str,
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=100, description="Items per page"),
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[MessageResponse]:
     params = PageParams(page=page, page_size=page_size)
@@ -80,6 +84,7 @@ def list_messages(
 def append_message(
     conversation_id: str,
     message_in: MessageCreate,
+    _user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> MessageResponse:
     msg = MessageService.append_message(

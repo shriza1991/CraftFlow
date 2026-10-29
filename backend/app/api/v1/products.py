@@ -5,7 +5,9 @@ import math
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_db, require_admin, require_viewer_or_above
+from app.core.security import AuthenticatedUser
+from app.db.models.enums import ActorType
 from app.schemas.pagination import PageParams, PaginatedResponse
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 from app.services.product_service import ProductService
@@ -25,6 +27,7 @@ def list_products(
     active_only: bool = Query(default=True, description="Filter only active products"),
     material: str | None = Query(default=None, description="Filter by material"),
     category: str | None = Query(default=None, description="Filter by category"),
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ProductResponse]:
     params = PageParams(page=page, page_size=page_size)
@@ -50,13 +53,19 @@ def list_products(
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Product",
-    description="Add a product or service and optional variants.",
+    description="Add a product or service and optional variants. Requires admin role.",
 )
 def create_product(
     product_in: ProductCreate,
+    user: AuthenticatedUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ProductResponse:
-    product = ProductService.create_product(db=db, product_in=product_in)
+    product = ProductService.create_product(
+        db=db,
+        product_in=product_in,
+        actor_id=user.username,
+        actor_type=ActorType.ADMIN.value,
+    )
     return ProductResponse.model_validate(product)
 
 
@@ -68,6 +77,7 @@ def create_product(
 )
 def get_product(
     product_id: str,
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> ProductResponse:
     product = ProductService.get_product(db=db, product_id=product_id)
@@ -78,12 +88,19 @@ def get_product(
     "/{product_id}",
     response_model=ProductResponse,
     summary="Update Product",
-    description="Update product attributes, price, or active status.",
+    description="Update product attributes, price, or active status. Requires admin role.",
 )
 def update_product(
     product_id: str,
     updates: ProductUpdate,
+    user: AuthenticatedUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ProductResponse:
-    product = ProductService.update_product(db=db, product_id=product_id, updates=updates)
+    product = ProductService.update_product(
+        db=db,
+        product_id=product_id,
+        updates=updates,
+        actor_id=user.username,
+        actor_type=ActorType.ADMIN.value,
+    )
     return ProductResponse.model_validate(product)

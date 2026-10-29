@@ -5,8 +5,9 @@ import math
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db
-from app.db.models.enums import LeadStatus
+from app.core.dependencies import get_db, require_agent_or_admin, require_viewer_or_above
+from app.core.security import AuthenticatedUser, Role
+from app.db.models.enums import ActorType, LeadStatus
 from app.schemas.lead import LeadCreate, LeadResponse, LeadUpdate
 from app.schemas.pagination import PageParams, PaginatedResponse
 from app.services.lead_service import LeadService
@@ -27,6 +28,7 @@ def list_leads(
         default=None, description="Filter by lead qualification status"
     ),
     customer_id: str | None = Query(default=None, description="Filter by customer ID"),
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[LeadResponse]:
     params = PageParams(page=page, page_size=page_size)
@@ -55,9 +57,16 @@ def list_leads(
 )
 def create_lead(
     lead_in: LeadCreate,
+    user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> LeadResponse:
-    lead = LeadService.create_lead(db=db, lead_in=lead_in)
+    actor_type = ActorType.ADMIN.value if user.role == Role.ADMIN else ActorType.HUMAN.value
+    lead = LeadService.create_lead(
+        db=db,
+        lead_in=lead_in,
+        actor_id=user.username,
+        actor_type=actor_type,
+    )
     return LeadResponse.model_validate(lead)
 
 
@@ -69,6 +78,7 @@ def create_lead(
 )
 def get_lead(
     lead_id: str,
+    _user: AuthenticatedUser = Depends(require_viewer_or_above),
     db: Session = Depends(get_db),
 ) -> LeadResponse:
     lead = LeadService.get_lead(db=db, lead_id=lead_id)
@@ -84,7 +94,15 @@ def get_lead(
 def update_lead(
     lead_id: str,
     updates: LeadUpdate,
+    user: AuthenticatedUser = Depends(require_agent_or_admin),
     db: Session = Depends(get_db),
 ) -> LeadResponse:
-    lead = LeadService.update_lead(db=db, lead_id=lead_id, updates=updates)
+    actor_type = ActorType.ADMIN.value if user.role == Role.ADMIN else ActorType.HUMAN.value
+    lead = LeadService.update_lead(
+        db=db,
+        lead_id=lead_id,
+        updates=updates,
+        actor_id=user.username,
+        actor_type=actor_type,
+    )
     return LeadResponse.model_validate(lead)

@@ -46,8 +46,8 @@ class Settings(BaseSettings):
         dbname = url.database or "ages_art_db"
         if not dbname.endswith("_test") and not dbname.endswith("_test_db"):
             test_dbname = f"{dbname}_test"
-            return str(url.set(database=test_dbname))
-        return str(url)
+            return url.set(database=test_dbname).render_as_string(hide_password=False)
+        return url.render_as_string(hide_password=False)
 
     # AI & LLM Provider Configuration
     AI_PROVIDER: str = "mock"
@@ -68,7 +68,12 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
 
-    # Security & CORS
+    # Security, Authentication & Access Control (Single-Business Deployment)
+    API_KEY_ADMIN: str = "cf_admin_dev_key_2026"
+    API_KEY_AGENT: str = "cf_agent_dev_key_2026"
+    API_KEY_VIEWER: str = "cf_viewer_dev_key_2026"
+
+    # CORS
     CORS_ORIGINS: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",

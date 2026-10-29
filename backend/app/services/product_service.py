@@ -1,9 +1,11 @@
 """Product domain service implementing business operations and catalog querying."""
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import NotFoundException, ValidationException
+from app.db.models.enums import ActorType
 from app.db.models.product import Product, ProductVariant
 from app.schemas.pagination import PageParams
 from app.schemas.product import ProductCreate, ProductUpdate
@@ -14,7 +16,12 @@ class ProductService:
     """Deterministic business operations for the catalog."""
 
     @staticmethod
-    def create_product(db: Session, product_in: ProductCreate) -> Product:
+    def create_product(
+        db: Session,
+        product_in: ProductCreate,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.SYSTEM,
+    ) -> Product:
         """Create a new product with optional initial variants."""
         # Check SKU uniqueness
         existing_sku = db.scalar(select(Product).where(Product.sku == product_in.sku))
@@ -32,41 +39,64 @@ class ProductService:
                 details={"slug": product_in.slug},
             )
 
-        product_data = product_in.model_dump(exclude={"variants", "metadata_"})
-        product = Product(
-            **product_data,
-            metadata_=product_in.metadata_,
-        )
-        db.add(product)
-        db.flush()
-
-        # Add variants
+        # Check for duplicate variant suffixes within the product payload
+        seen_suffixes = set()
         for variant_in in product_in.variants:
-            variant_data = variant_in.model_dump(exclude={"metadata_"})
-            variant = ProductVariant(
-                product_id=product.id,
-                **variant_data,
-                metadata_=variant_in.metadata_,
+            if variant_in.sku_suffix in seen_suffixes:
+                raise ValidationException(
+                    message=f"Duplicate variant SKU suffix '{variant_in.sku_suffix}' in product payload.",
+                    details={"sku_suffix": variant_in.sku_suffix},
+                )
+            seen_suffixes.add(variant_in.sku_suffix)
+
+        try:
+            product_data = product_in.model_dump(exclude={"variants", "metadata_"})
+            product = Product(
+                **product_data,
+                metadata_=product_in.metadata_,
             )
-            db.add(variant)
+            db.add(product)
+            db.flush()
 
-        db.flush()
-        db.refresh(product)
+            # Add variants
+            for variant_in in product_in.variants:
+                variant_data = variant_in.model_dump(exclude={"metadata_"})
+                variant = ProductVariant(
+                    product_id=product.id,
+                    **variant_data,
+                    metadata_=variant_in.metadata_,
+                )
+                db.add(variant)
 
-        AuditService.record(
-            db=db,
-            action="PRODUCT_CREATED",
-            entity_type="Product",
-            entity_id=product.id,
-            description=f"Created product '{product.name}' with SKU '{product.sku}'",
-            after_state={
-                "sku": product.sku,
-                "name": product.name,
-                "base_price": str(product.base_price),
-            },
-        )
-        db.commit()
-        return product
+            db.flush()
+            db.refresh(product)
+
+            AuditService.record(
+                db=db,
+                action="PRODUCT_CREATED",
+                entity_type="Product",
+                entity_id=product.id,
+                actor_id=actor_id,
+                actor_type=actor_type,
+                description=f"Created product '{product.name}' with SKU '{product.sku}'",
+                after_state={
+                    "sku": product.sku,
+                    "name": product.name,
+                    "base_price": str(product.base_price),
+                    "variants_count": len(product_in.variants),
+                },
+            )
+            db.commit()
+            return product
+        except IntegrityError as err:
+            db.rollback()
+            raise ValidationException(
+                message=f"Product with SKU '{product_in.sku}' or slug '{product_in.slug}' already exists.",
+                details={"sku": product_in.sku, "slug": product_in.slug},
+            ) from err
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get_product(db: Session, product_id: str) -> Product:
@@ -129,16 +159,45 @@ class ProductService:
         return items, total
 
     @staticmethod
-    def update_product(db: Session, product_id: str, updates: ProductUpdate) -> Product:
+    def update_product(
+        db: Session,
+        product_id: str,
+        updates: ProductUpdate,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.SYSTEM,
+    ) -> Product:
         """Update existing product fields and record audit trail."""
         product = ProductService.get_product(db, product_id)
         before_state = {
             "name": product.name,
             "base_price": str(product.base_price),
             "is_active": product.is_active,
+            "sku": product.sku,
+            "slug": product.slug,
         }
 
         update_dict = updates.model_dump(exclude_unset=True)
+
+        if "sku" in update_dict and update_dict["sku"]:
+            existing_sku = db.scalar(
+                select(Product).where(Product.sku == update_dict["sku"], Product.id != product.id)
+            )
+            if existing_sku:
+                raise ValidationException(
+                    message=f"Product with SKU '{update_dict['sku']}' already exists.",
+                    details={"sku": update_dict["sku"]},
+                )
+
+        if "slug" in update_dict and update_dict["slug"]:
+            existing_slug = db.scalar(
+                select(Product).where(Product.slug == update_dict["slug"], Product.id != product.id)
+            )
+            if existing_slug:
+                raise ValidationException(
+                    message=f"Product with slug '{update_dict['slug']}' already exists.",
+                    details={"slug": update_dict["slug"]},
+                )
+
         if "metadata_" in update_dict and update_dict["metadata_"] is not None:
             product.metadata_ = {**product.metadata_, **update_dict.pop("metadata_")}
 
@@ -146,23 +205,37 @@ class ProductService:
             if value is not None:
                 setattr(product, key, value)
 
-        db.flush()
-        db.refresh(product)
+        try:
+            db.flush()
+            db.refresh(product)
 
-        after_state = {
-            "name": product.name,
-            "base_price": str(product.base_price),
-            "is_active": product.is_active,
-        }
+            after_state = {
+                "name": product.name,
+                "base_price": str(product.base_price),
+                "is_active": product.is_active,
+                "sku": product.sku,
+                "slug": product.slug,
+            }
 
-        AuditService.record(
-            db=db,
-            action="PRODUCT_UPDATED",
-            entity_type="Product",
-            entity_id=product.id,
-            description=f"Updated product '{product.name}'",
-            before_state=before_state,
-            after_state=after_state,
-        )
-        db.commit()
-        return product
+            AuditService.record(
+                db=db,
+                action="PRODUCT_UPDATED",
+                entity_type="Product",
+                entity_id=product.id,
+                actor_id=actor_id,
+                actor_type=actor_type,
+                description=f"Updated product '{product.name}'",
+                before_state=before_state,
+                after_state=after_state,
+            )
+            db.commit()
+            return product
+        except IntegrityError as err:
+            db.rollback()
+            raise ValidationException(
+                message="Product update failed due to duplicate SKU or slug conflict.",
+                details={"product_id": product_id},
+            ) from err
+        except Exception:
+            db.rollback()
+            raise

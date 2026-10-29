@@ -135,7 +135,24 @@ def test_client() -> Generator[TestClient, None, None]:
 
 @pytest.fixture
 def client_with_db(db_session: Session) -> Generator[TestClient, None, None]:
-    """TestClient that uses the transactional db_session for API calls."""
+    """TestClient that uses the transactional db_session for API calls with default admin credentials."""
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(
+        app=app,
+        base_url="http://testserver",
+        headers={"Authorization": "Bearer cf_admin_dev_key_2026"},
+    ) as client:
+        yield client
+    app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def unauthenticated_client_with_db(db_session: Session) -> Generator[TestClient, None, None]:
+    """TestClient that uses transactional db_session without any authentication headers."""
 
     def override_get_db():
         yield db_session
@@ -144,6 +161,21 @@ def client_with_db(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app=app, base_url="http://testserver") as client:
         yield client
     app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer cf_admin_dev_key_2026"}
+
+
+@pytest.fixture
+def agent_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer cf_agent_dev_key_2026"}
+
+
+@pytest.fixture
+def viewer_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer cf_viewer_dev_key_2026"}
 
 
 @pytest.fixture

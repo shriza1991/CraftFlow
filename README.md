@@ -11,6 +11,8 @@ CraftFlow is a configurable backend platform for business operations and AI-assi
 - **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`012e8b346d5b`), supporting fresh deployments and upgrades from historical branches.
 - **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
 - **General Grounded RAG & Semantic Search**: Parameterized retrieval and question-answering conditioned strictly on business knowledge context, supporting full document provenance, explicit refusal on unsupported questions, and zero hardcoded product bias.
+- **Role-Based Access Control (RBAC)**: Tiered access for single-business deployments (`admin`, `agent`, `viewer`) using API keys via `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+- **Business Invariants & Audit Trail**: Cross-record integrity enforcement (lead customer ownership, product variant validation, duplicate submission rejection) and automated append-only mutation audit logging.
 
 ---
 
@@ -186,6 +188,40 @@ All semantic search results (`POST /api/v1/knowledge/search`) and RAG response c
 ### 4. Deployment Knowledge Isolation
 - The default `knowledge_base/` directory contains only a README; neither example business's knowledge files are loaded unless explicitly configured via `KNOWLEDGE_BASE_DIR` in `.env` or `--dir` in `ingest_knowledge.py`.
 - Both example knowledge sets (`examples/knowledge/ages-art` and `examples/knowledge/design-studio`) are preserved independently and validated via unit tests.
+
+---
+
+## Access Control, Business Invariants & Audit Trail
+
+CraftFlow includes robust access control, relationship validation, and audit recording across all core APIs:
+
+### 1. Authentication & Role-Based Access Control (RBAC)
+All domain endpoints (`/api/v1/products`, `/api/v1/customers`, `/api/v1/leads`, `/api/v1/followups`, `/api/v1/conversations`) require authentication via:
+- `Authorization: Bearer <API_KEY>` or
+- `X-API-Key: <API_KEY>`
+
+Three roles are supported for single-business deployments:
+- **`admin`** (`API_KEY_ADMIN`): Full access to create, update, and read all entities.
+- **`agent`** (`API_KEY_AGENT`): Front-office sales & support access. Can create/update customers, leads, follow-ups, and messages; read-only access to products.
+- **`viewer`** (`API_KEY_VIEWER`): Read-only reporting access. All mutation endpoints return HTTP 403 `FORBIDDEN`.
+
+Unauthenticated callers receive HTTP 401 `UNAUTHORIZED`.
+
+### 2. Business Invariants & Cross-Record Validation
+- **Follow-up Ownership**: Verifies that the follow-up's `customer_id` owns the referenced `lead_id` (`lead.customer_id == followup.customer_id`). If `conversation_id` is passed, it must belong to the same customer. Mismatches are rejected with HTTP 422.
+- **Product Variant Belonging**: Verifies that any selected product variant in a lead item belongs to that specific product (`variant.product_id == prod_item.product_id`). Cross-product variant references are rejected with HTTP 422.
+
+### 3. Duplicate Prevention & Transaction Boundaries
+- **Concurrent & Duplicate Products**: Enforces SKU and slug uniqueness. Collisions trigger database rollback and return HTTP 422. Product variant SKU suffixes must also be unique within a product.
+- **Customer Collisions**: Normalized email, phone, and WhatsApp collisions on create or update are rejected with HTTP 422 and transaction rollback.
+- **Duplicate Leads & Follow-ups**: Identical active inquiry leads and duplicate pending follow-ups scheduled at the same timestamp are rejected with HTTP 422.
+
+### 4. Mutation Audit Trail
+Every product, customer, lead, and follow-up create or update logs an append-only audit record in `audit_logs`:
+- Caller identification (`actor_id`, `actor_type`: `HUMAN` or `AGENT`)
+- Action performed (`CREATE`, `UPDATE`)
+- Affected resource (`resource_type`, `resource_id`)
+- Contextual state snapshots (`before_state`, `after_state`)
 
 ---
 

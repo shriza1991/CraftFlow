@@ -59,7 +59,42 @@ Verifies critical dependencies (PostgreSQL database connectivity).
 
 ---
 
-## 3. Centralized Error Contract
+## 3. Authentication & Role-Based Access Control (RBAC)
+
+CraftFlow protects business endpoints with role-based access control tailored for single-business deployments.
+
+### 3.1 Authentication Headers
+Clients authenticate by providing an API key in either:
+- **Authorization header**: `Authorization: Bearer <API_KEY>`
+- **X-API-Key header**: `X-API-Key: <API_KEY>`
+
+Requests with missing or invalid API keys receive HTTP 401 with code `UNAUTHORIZED`.
+
+### 3.2 Roles & Permissions Matrix
+Each API key maps to one of three roles:
+- **`admin`**: Full administrative access. Can modify the product catalog, customer records, sales leads, follow-ups, conversations, and knowledge sources.
+- **`agent`**: Front-office sales & support access. Can create and update customers, leads, follow-up touchpoints, and conversation messages. Read-only access to products.
+- **`viewer`**: Read-only reporting access. Can view products, customers, leads, follow-ups, and conversations. Any POST or PATCH mutation is rejected with HTTP 403 `FORBIDDEN`.
+
+| Endpoint Group | Read (`GET`) | Write / Mutate (`POST`, `PATCH`) |
+| :--- | :--- | :--- |
+| `/api/v1/health`, `/api/v1/readiness`, `/api/v1/business` | Public | N/A |
+| `/api/v1/products` | `viewer`, `agent`, `admin` | `admin` only |
+| `/api/v1/customers` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/leads` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/followups` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/conversations` | `viewer`, `agent`, `admin` | `agent`, `admin` |
+| `/api/v1/knowledge` | `viewer`, `agent`, `admin` | `admin` |
+
+### 3.3 Documented Development API Keys
+Configured in `.env` (see `.env.example` and `examples/*.env`):
+- `API_KEY_ADMIN="cf_admin_dev_key_2026"`
+- `API_KEY_AGENT="cf_agent_dev_key_2026"`
+- `API_KEY_VIEWER="cf_viewer_dev_key_2026"`
+
+---
+
+## 4. Centralized Error Contract
 
 All error responses strictly follow the standard `ErrorResponse` schema:
 
@@ -83,8 +118,10 @@ All error responses strictly follow the standard `ErrorResponse` schema:
 ```
 
 Standard Error Codes:
-- `VALIDATION_ERROR` (HTTP 422)
-- `NOT_FOUND` (HTTP 404)
+- `VALIDATION_ERROR` (HTTP 422): Invariant violation, relationship mismatch, or duplicate collision.
+- `UNAUTHORIZED` (HTTP 401): Missing, malformed, or invalid API key or Bearer token.
+- `FORBIDDEN` (HTTP 403): Caller role has insufficient permissions for the requested endpoint.
+- `NOT_FOUND` (HTTP 404): Resource not found.
 - `EXTERNAL_SERVICE_ERROR` (HTTP 502)
 - `AI_PROVIDER_ERROR` (HTTP 502)
 - `TOOL_EXECUTION_ERROR` (HTTP 400)
@@ -93,7 +130,37 @@ Standard Error Codes:
 
 ---
 
-## 4. Active Domain & Knowledge Endpoints
+## 5. Business Invariants & Integrity Rules
+
+CraftFlow enforces domain integrity and cross-record invariants across all business services:
+
+### 5.1 Follow-up Ownership Invariant
+- A follow-up touchpoint's `customer_id` **must strictly match** the owner of the referenced `lead_id` (`lead.customer_id == followup.customer_id`).
+- If an optional `conversation_id` is supplied, its `customer_id` must also match `followup.customer_id`.
+- Attempts to schedule follow-ups across mismatched customer and lead records are rejected with HTTP 422 `VALIDATION_ERROR`.
+
+### 5.2 Lead Product Variant Integrity
+- Any `variant_id` specified in a lead's requested product list **must belong to the referenced `product_id`** (`variant.product_id == lead_product.product_id`).
+- Attempting to attach an existing variant from Product A to Product B is rejected with HTTP 422 `VALIDATION_ERROR`.
+
+### 5.3 Duplicate Prevention & Concurrency Handling
+- **Products**: SKUs and URL slugs are strictly unique. Re-using an existing SKU or slug on create or update is rejected with HTTP 422 and initiates an immediate transaction rollback. Variant SKU suffixes must be unique within a product.
+- **Customers**: Primary email, phone number, and WhatsApp identifier are normalized and checked for collisions. Updates that would duplicate another customer's identifier fail cleanly with HTTP 422 and transaction rollback.
+- **Leads**: Submitting duplicate active inquiry leads with identical details for the same customer is rejected with HTTP 422.
+- **Follow-ups**: Scheduling duplicate pending follow-ups for the same lead and customer at the identical scheduled timestamp is rejected with HTTP 422.
+
+### 5.4 Audit Trail & Mutation Logging
+Every state mutation on Products, Customers, Leads, and Follow-ups creates an append-only entry in `audit_logs`:
+- `actor_id`: Identified caller (e.g., `admin_user`, `agent_user`, or API key identity).
+- `actor_type`: `HUMAN` or `AGENT`.
+- `action`: `CREATE` or `UPDATE`.
+- `resource_type`: `PRODUCT`, `CUSTOMER`, `LEAD`, `FOLLOW_UP`.
+- `resource_id`: UUID of the affected entity.
+- `before_state` & `after_state`: JSON snapshots of relevant state changes.
+
+---
+
+## 6. Active Domain & Knowledge Endpoints
 
 All list endpoints support pagination parameters:
 - `page`: Integer >= 1 (default: 1)
@@ -144,7 +211,7 @@ All list endpoints support pagination parameters:
 
 ---
 
-## 5. Planned Future Endpoints (Milestones P3 → P13)
+## 7. Planned Future Endpoints (Milestones P3 → P13)
 
 | Path | Method | Milestone | Description |
 |---|---|---|---|

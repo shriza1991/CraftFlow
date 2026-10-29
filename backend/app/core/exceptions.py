@@ -46,6 +46,20 @@ class ConflictException(AppException):
     error_code = "CONFLICT"
 
 
+class UnauthorizedException(AppException):
+    """Raised when authentication credentials are missing or invalid."""
+
+    status_code = 401
+    error_code = "UNAUTHORIZED"
+
+
+class ForbiddenException(AppException):
+    """Raised when authenticated caller lacks the required role or permission."""
+
+    status_code = 403
+    error_code = "FORBIDDEN"
+
+
 class ExternalServiceException(AppException):
     """Raised when an external API or service call fails."""
 

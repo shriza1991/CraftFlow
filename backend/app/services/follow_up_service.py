@@ -6,8 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundException, ValidationException
+from app.db.models.conversation import Conversation
 from app.db.models.customer import Customer
-from app.db.models.enums import FollowUpStatus
+from app.db.models.enums import ActorType, FollowUpStatus
 from app.db.models.follow_up import FollowUp
 from app.db.models.lead import Lead
 from app.schemas.follow_up import FollowUpCreate, FollowUpUpdate
@@ -19,7 +20,12 @@ class FollowUpService:
     """Operations and validation state transitions for scheduled business follow-ups."""
 
     @staticmethod
-    def schedule_followup(db: Session, followup_in: FollowUpCreate) -> FollowUp:
+    def schedule_followup(
+        db: Session,
+        followup_in: FollowUpCreate,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.SYSTEM,
+    ) -> FollowUp:
         """Schedule a follow-up touchpoint linked to a lead and customer."""
         lead = db.get(Lead, followup_in.lead_id)
         if not lead:
@@ -35,43 +41,95 @@ class FollowUpService:
                 details={"customer_id": followup_in.customer_id},
             )
 
-        data = followup_in.model_dump(exclude={"metadata_"})
-        data["channel"] = (
-            followup_in.channel.value
-            if hasattr(followup_in.channel, "value")
-            else str(followup_in.channel)
-        )
-        data["status"] = (
-            followup_in.status.value
-            if hasattr(followup_in.status, "value")
-            else str(followup_in.status)
-        )
+        # Invariant: Follow-up customer must match the lead's owner customer
+        if lead.customer_id != followup_in.customer_id:
+            raise ValidationException(
+                message=f"Customer '{followup_in.customer_id}' does not own Lead '{followup_in.lead_id}'.",
+                details={
+                    "customer_id": followup_in.customer_id,
+                    "lead_id": followup_in.lead_id,
+                    "lead_customer_id": lead.customer_id,
+                },
+            )
 
-        follow_up = FollowUp(
-            **data,
-            metadata_=followup_in.metadata_,
+        # Invariant: If conversation_id is provided, it must belong to the customer
+        if followup_in.conversation_id:
+            conv = db.get(Conversation, followup_in.conversation_id)
+            if not conv:
+                raise NotFoundException(
+                    message=f"Conversation with ID '{followup_in.conversation_id}' not found.",
+                    details={"conversation_id": followup_in.conversation_id},
+                )
+            if conv.customer_id != followup_in.customer_id:
+                raise ValidationException(
+                    message=f"Conversation '{conv.id}' belongs to Customer '{conv.customer_id}', not '{followup_in.customer_id}'.",
+                    details={
+                        "conversation_id": conv.id,
+                        "conversation_customer_id": conv.customer_id,
+                        "customer_id": followup_in.customer_id,
+                    },
+                )
+
+        # Duplicate handling: reject duplicate pending follow-up for same lead at same scheduled time
+        existing_fu = db.scalar(
+            select(FollowUp).where(
+                FollowUp.lead_id == followup_in.lead_id,
+                FollowUp.customer_id == followup_in.customer_id,
+                FollowUp.scheduled_at == followup_in.scheduled_at,
+                FollowUp.status == FollowUpStatus.PENDING.value,
+            )
         )
-        db.add(follow_up)
+        if existing_fu:
+            raise ValidationException(
+                message="A pending follow-up is already scheduled for this lead at the specified time.",
+                details={"existing_followup_id": existing_fu.id},
+            )
 
-        # Update lead next_follow_up_at
-        lead.next_follow_up_at = follow_up.scheduled_at
+        try:
+            data = followup_in.model_dump(exclude={"metadata_"})
+            data["channel"] = (
+                followup_in.channel.value
+                if hasattr(followup_in.channel, "value")
+                else str(followup_in.channel)
+            )
+            data["status"] = (
+                followup_in.status.value
+                if hasattr(followup_in.status, "value")
+                else str(followup_in.status)
+            )
 
-        db.flush()
-        db.refresh(follow_up)
+            follow_up = FollowUp(
+                **data,
+                metadata_=followup_in.metadata_,
+            )
+            db.add(follow_up)
 
-        AuditService.record(
-            db=db,
-            action="FOLLOW_UP_SCHEDULED",
-            entity_type="FollowUp",
-            entity_id=follow_up.id,
-            description=f"Scheduled follow-up for lead '{lead.id}' on {follow_up.scheduled_at.isoformat()}.",
-            after_state={
-                "scheduled_at": follow_up.scheduled_at.isoformat(),
-                "status": follow_up.status,
-            },
-        )
-        db.commit()
-        return follow_up
+            # Update lead next_follow_up_at
+            lead.next_follow_up_at = follow_up.scheduled_at
+
+            db.flush()
+            db.refresh(follow_up)
+
+            AuditService.record(
+                db=db,
+                action="FOLLOW_UP_SCHEDULED",
+                entity_type="FollowUp",
+                entity_id=follow_up.id,
+                actor_id=actor_id,
+                actor_type=actor_type,
+                description=f"Scheduled follow-up for lead '{lead.id}' on {follow_up.scheduled_at.isoformat()}.",
+                after_state={
+                    "scheduled_at": follow_up.scheduled_at.isoformat(),
+                    "status": follow_up.status,
+                    "lead_id": follow_up.lead_id,
+                    "customer_id": follow_up.customer_id,
+                },
+            )
+            db.commit()
+            return follow_up
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get_followup(db: Session, followup_id: str) -> FollowUp:
@@ -114,10 +172,22 @@ class FollowUpService:
         return items, total
 
     @staticmethod
-    def update_followup(db: Session, followup_id: str, updates: FollowUpUpdate) -> FollowUp:
+    def update_followup(
+        db: Session,
+        followup_id: str,
+        updates: FollowUpUpdate,
+        actor_id: str | None = None,
+        actor_type: ActorType | str = ActorType.SYSTEM,
+    ) -> FollowUp:
         """Update follow-up status enforcing state machine rules."""
         follow_up = FollowUpService.get_followup(db, followup_id)
         before_status = follow_up.status
+        before_state = {
+            "status": before_status,
+            "scheduled_at": (
+                follow_up.scheduled_at.isoformat() if follow_up.scheduled_at else None
+            ),
+        }
 
         update_dict = updates.model_dump(exclude_unset=True)
 
@@ -147,17 +217,33 @@ class FollowUpService:
             if key != "status" and value is not None:
                 setattr(follow_up, key, value)
 
-        db.flush()
-        db.refresh(follow_up)
+        try:
+            db.flush()
+            db.refresh(follow_up)
 
-        AuditService.record(
-            db=db,
-            action="FOLLOW_UP_UPDATED",
-            entity_type="FollowUp",
-            entity_id=follow_up.id,
-            description=f"Updated follow-up status from {before_status} to {follow_up.status}.",
-            before_state={"status": before_status},
-            after_state={"status": follow_up.status},
-        )
-        db.commit()
-        return follow_up
+            after_state = {
+                "status": follow_up.status,
+                "scheduled_at": (
+                    follow_up.scheduled_at.isoformat() if follow_up.scheduled_at else None
+                ),
+                "completed_at": (
+                    follow_up.completed_at.isoformat() if follow_up.completed_at else None
+                ),
+            }
+
+            AuditService.record(
+                db=db,
+                action="FOLLOW_UP_UPDATED",
+                entity_type="FollowUp",
+                entity_id=follow_up.id,
+                actor_id=actor_id,
+                actor_type=actor_type,
+                description=f"Updated follow-up status from {before_status} to {follow_up.status}.",
+                before_state=before_state,
+                after_state=after_state,
+            )
+            db.commit()
+            return follow_up
+        except Exception:
+            db.rollback()
+            raise

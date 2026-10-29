@@ -415,3 +415,166 @@ def test_audit_log_creation_and_append_only(db_session: Session):
     assert audit_entry.action == "LEAD_STATUS_UPDATED"
     assert audit_entry.entity_id == str(entity_id)
     assert audit_entry.created_at is not None
+
+
+def test_followup_customer_lead_ownership_invariant(db_session: Session):
+    """Verify that scheduling a follow-up with customer A on lead owned by customer B raises ValidationException."""
+    cust_a = CustomerService.create_customer(
+        db=db_session,
+        customer_in=CustomerCreate(
+            first_name="CustomerA",
+            email=f"cust.a.{uuid.uuid4().hex[:6]}@example.com",
+        ),
+    )
+    cust_b = CustomerService.create_customer(
+        db=db_session,
+        customer_in=CustomerCreate(
+            first_name="CustomerB",
+            email=f"cust.b.{uuid.uuid4().hex[:6]}@example.com",
+        ),
+    )
+
+    lead_a = LeadService.create_lead(
+        db=db_session,
+        lead_in=LeadCreate(
+            customer_id=cust_a.id,
+            source=CustomerSource.WEBSITE,
+        ),
+    )
+
+    # Attempt to schedule follow-up with cust_b on lead_a
+    with pytest.raises(ValidationException) as exc_info:
+        FollowUpService.schedule_followup(
+            db=db_session,
+            followup_in=FollowUpCreate(
+                lead_id=lead_a.id,
+                customer_id=cust_b.id,
+                scheduled_at=datetime.now(UTC) + timedelta(days=2),
+                reason="Mismatched customer follow-up test",
+            ),
+        )
+    assert "does not own Lead" in str(exc_info.value)
+
+
+def test_lead_product_variant_invariant(db_session: Session):
+    """Verify that a lead referencing a variant belonging to a different product raises ValidationException."""
+    customer = CustomerService.create_customer(
+        db=db_session,
+        customer_in=CustomerCreate(
+            first_name="VariantTestCust",
+            email=f"variant.{uuid.uuid4().hex[:6]}@example.com",
+        ),
+    )
+
+    # Product 1 with variant 1
+    prod1 = ProductService.create_product(
+        db=db_session,
+        product_in=ProductCreate(
+            sku=f"PROD-1-{uuid.uuid4().hex[:6]}",
+            name="Product One",
+            slug=f"prod-1-{uuid.uuid4().hex[:6]}",
+            base_price=Decimal("100.00"),
+            variants=[
+                ProductVariantCreate(
+                    name="Variant 1",
+                    sku_suffix="V1",
+                )
+            ],
+        ),
+    )
+    # Product 2 without variants
+    prod2 = ProductService.create_product(
+        db=db_session,
+        product_in=ProductCreate(
+            sku=f"PROD-2-{uuid.uuid4().hex[:6]}",
+            name="Product Two",
+            slug=f"prod-2-{uuid.uuid4().hex[:6]}",
+            base_price=Decimal("200.00"),
+        ),
+    )
+
+    variant1_id = prod1.variants[0].id
+
+    # Associate prod2 with variant1 (which belongs to prod1)
+    with pytest.raises(ValidationException) as exc_info:
+        LeadService.create_lead(
+            db=db_session,
+            lead_in=LeadCreate(
+                customer_id=customer.id,
+                source=CustomerSource.DIRECT,
+                products=[
+                    LeadProductCreate(
+                        product_id=prod2.id,
+                        variant_id=variant1_id,
+                        quantity=1,
+                    )
+                ],
+            ),
+        )
+    assert "does not belong to product" in str(exc_info.value)
+
+
+def test_followup_duplicate_prevention(db_session: Session):
+    """Verify that scheduling a duplicate pending follow-up at the same scheduled time is rejected."""
+    customer = CustomerService.create_customer(
+        db=db_session,
+        customer_in=CustomerCreate(
+            first_name="DuplicateFUTest",
+            email=f"dup.fu.{uuid.uuid4().hex[:6]}@example.com",
+        ),
+    )
+    lead = LeadService.create_lead(
+        db=db_session,
+        lead_in=LeadCreate(
+            customer_id=customer.id,
+            source=CustomerSource.DIRECT,
+        ),
+    )
+
+    sched_time = datetime.now(UTC) + timedelta(days=3)
+
+    FollowUpService.schedule_followup(
+        db=db_session,
+        followup_in=FollowUpCreate(
+            lead_id=lead.id,
+            customer_id=customer.id,
+            scheduled_at=sched_time,
+            reason="First consultation",
+        ),
+    )
+
+    with pytest.raises(ValidationException) as exc_info:
+        FollowUpService.schedule_followup(
+            db=db_session,
+            followup_in=FollowUpCreate(
+                lead_id=lead.id,
+                customer_id=customer.id,
+                scheduled_at=sched_time,
+                reason="Duplicate consultation attempt",
+            ),
+        )
+    assert "already scheduled" in str(exc_info.value)
+
+
+def test_lead_duplicate_submission_prevention(db_session: Session):
+    """Verify that submitting a duplicate active inquiry lead is rejected."""
+    customer = CustomerService.create_customer(
+        db=db_session,
+        customer_in=CustomerCreate(
+            first_name="DuplicateLeadCust",
+            email=f"dup.lead.{uuid.uuid4().hex[:6]}@example.com",
+        ),
+    )
+
+    lead_in = LeadCreate(
+        customer_id=customer.id,
+        source=CustomerSource.WEBSITE,
+        interest_description="Detailed inquiry about custom stone carved fixtures",
+    )
+
+    LeadService.create_lead(db=db_session, lead_in=lead_in)
+
+    # Submitting identical active inquiry again
+    with pytest.raises(ValidationException) as exc_info:
+        LeadService.create_lead(db=db_session, lead_in=lead_in)
+    assert "duplicate active lead" in str(exc_info.value)

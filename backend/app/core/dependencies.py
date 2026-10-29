@@ -6,6 +6,15 @@ from app.agents.registry import AgentRegistry, get_agent_registry
 from app.ai.base import LLMProvider
 from app.ai.factory import get_llm_provider
 from app.core.config import Settings, get_settings
+from app.core.security import (
+    AuthenticatedUser,
+    Role,
+    get_current_user,
+    require_admin,
+    require_agent_or_admin,
+    require_role,
+    require_viewer_or_above,
+)
 from app.crm.base import CRMProvider
 from app.crm.mock import MockCRMProvider
 from app.db.session import get_db
@@ -70,4 +79,11 @@ __all__ = [
     "get_crm",
     "get_retriever",
     "get_whatsapp",
+    "get_current_user",
+    "require_role",
+    "require_admin",
+    "require_agent_or_admin",
+    "require_viewer_or_above",
+    "Role",
+    "AuthenticatedUser",
 ]

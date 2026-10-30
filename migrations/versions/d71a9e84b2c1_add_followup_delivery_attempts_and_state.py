@@ -258,3 +258,4 @@ def downgrade() -> None:
         table_name="follow_ups",
     )
     op.drop_column("follow_ups", "approval_status")
+

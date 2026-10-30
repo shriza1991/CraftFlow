@@ -126,6 +126,30 @@ async def approve_followup(
 
 
 @router.post(
+    "/{followup_id}/retry-dispatch",
+    response_model=FollowUpResponse,
+    summary="Retry n8n Dispatch",
+    description=(
+        "Safely retries external n8n workflow dispatch for an approved follow-up without "
+        "creating duplicate logical deliveries."
+    ),
+)
+async def retry_dispatch(
+    followup_id: str,
+    user: AuthenticatedUser = Depends(require_agent_or_admin),
+    db: Session = Depends(get_db),
+) -> FollowUpResponse:
+    actor_type = ActorType.ADMIN.value if user.role == Role.ADMIN else ActorType.HUMAN.value
+    follow_up = await FollowUpService.dispatch_followup_to_n8n(
+        db=db,
+        followup_id=followup_id,
+        actor_id=user.username,
+        actor_type=actor_type,
+    )
+    return FollowUpResponse.model_validate(follow_up)
+
+
+@router.post(
     "/{followup_id}/cancel",
     response_model=FollowUpResponse,
     summary="Cancel Follow-up",

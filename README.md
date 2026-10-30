@@ -8,7 +8,7 @@ CraftFlow is a configurable backend platform for business operations and AI-assi
 
 - **FastAPI Application**: High-performance asynchronous API layer with versioned endpoints (`/api/v1/*`), OpenAPI documentation (`/docs`), centralized exception handling, correlation ID tracking (`X-Request-ID`), and health/readiness diagnostics.
 - **Relational & Vector Data Model**: PostgreSQL 16 with `pgvector` extension for products, product variants, customers, leads, conversations, messages, follow-ups, audit logs, and knowledge base document chunks with vector embeddings.
-- **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`012e8b346d5b`), supporting fresh deployments and upgrades from historical branches.
+- **Alembic Migrations**: Strictly tracked schema migrations with a single merge head (`d71a9e84b2c1`), supporting fresh deployments and upgrades from historical branches.
 - **Modular Business Identity**: Configured via environment variables (`BUSINESS_NAME`, `BUSINESS_DESCRIPTION`, `BUSINESS_INDUSTRY`) and exposed via `GET /api/v1/business`.
 - **General Grounded RAG & Semantic Search**: Parameterized retrieval and question-answering conditioned strictly on business knowledge context, supporting full document provenance, explicit refusal on unsupported questions, and zero hardcoded product bias.
 - **End-to-End Inquiry Workflow & Human Approval**: Deterministic 7-step pipeline accepting customer inquiries, retrieving grounded business knowledge and catalog items, drafting structured responses with traceable citations, creating or updating CRM leads, enforcing human-in-the-loop review before outbound dispatch, and logging telemetry and audit trails.
@@ -30,7 +30,7 @@ CraftFlow is designed with swappable provider interfaces so you can develop and 
 | **Embeddings** | `EMBEDDING_PROVIDER=mock`<br>Generates deterministic 1536-dimensional mock vectors | `EMBEDDING_PROVIDER=openai`<br>Calls `text-embedding-3-small` via OpenAI API |
 | **CRM Integration** | `CRM_PROVIDER=mock`<br>In-memory customer and lead tracking | `CRM_PROVIDER=hubspot` (or webhook automation)<br>Syncs contacts with external CRM |
 | **WhatsApp Messaging** | `WHATSAPP_PROVIDER=mock`<br>Simulates outbound payload generation | `WHATSAPP_PROVIDER=meta`<br>Dispatches live messages via Meta Cloud API |
-| **Workflow Automation** | Local mock webhook endpoints | `N8N_BASE_URL` & `N8N_WEBHOOK_SECRET`<br>Dispatches triggers to external n8n workflows |
+| **Workflow Automation** | `N8N_DISPATCH_MODE=mock`<br>Simulated n8n dispatch without external network calls | `N8N_DISPATCH_MODE=live`<br>Dispatches authenticated webhooks to `N8N_BASE_URL` with retry endpoint |
 
 ---
 
@@ -303,30 +303,30 @@ The script demonstrates:
 
 ---
 
-## n8n Follow-up Automation & Delivery Integration
+## n8n Follow-up Automation & Delivery Contract
 
-CraftFlow integrates with [n8n](https://n8n.io) for external scheduling and event relay while maintaining strict backend authority over business invariants, approval states, and delivery records.
+CraftFlow provides a contract-backed backend integration for follow-up automations designed for manual workflow construction in [n8n](https://n8n.io). The backend remains strictly responsible for business invariants, human approval state, scheduling verification, and delivery attempt records.
 
-### 1. Narrow Automation Boundary
-- **Backend Responsibility**: The FastAPI backend enforces whether a follow-up is eligible for delivery (must be `approval_status="APPROVED"` and not `CANCELLED`), manages duplicate event protection, records all delivery attempts, and appends messages to conversation history.
-- **n8n Responsibility**: n8n triggers the scheduled webhook relay, executes backoff delay between retry attempts, and manages external messaging nodes.
-- **Workflow Export**: A production-ready, version-controlled n8n workflow export is provided in [`workflows/n8n/follow_up_execution_workflow.json`](./workflows/n8n/follow_up_execution_workflow.json).
+### 1. Narrow Automation Boundary & Reference Export
+- **Backend Responsibility**: The FastAPI backend enforces whether a follow-up is eligible for delivery (must be `approval_status="APPROVED"` and not `CANCELLED`), prevents premature execution (`NOT_DUE`), manages database-backed attempt uniqueness and row locking, records all delivery attempts, and appends messages to conversation history.
+- **n8n Responsibility**: n8n coordinates waiting until `scheduled_at`, triggers the webhook relay, and manages retry backoff loops.
+- **Reference Workflow Export**: An initial reference export is stored in [`workflows/n8n/follow_up_execution_workflow.json`](./workflows/n8n/follow_up_execution_workflow.json) for reference and alignment. Complete setup, environment variables, and manual construction instructions are documented in [`workflows/n8n/README.md`](./workflows/n8n/README.md).
 
-### 2. Security & Webhook Contract
-Incoming n8n webhooks (`POST /api/v1/webhooks/n8n`) require authentication:
-- **Header**: `X-Webhook-Secret: <N8N_WEBHOOK_SECRET>` (or `Authorization: Bearer <N8N_WEBHOOK_SECRET>`).
-- Calls missing or presenting invalid secrets are rejected immediately with HTTP 401 `WEBHOOK_AUTHENTICATION_FAILED`.
+### 2. Configurable Dispatch & Safe Retries
+- **Dispatch Modes**: Configured via `N8N_DISPATCH_MODE` (`mock` by default for safe offline development, or `live` to send authenticated HTTP requests to `N8N_BASE_URL`).
+- **Dispatch Observability**: Real dispatch outcomes are saved directly on the follow-up: `n8n_dispatch_status` (`DISPATCHED` or `FAILED`), `n8n_dispatched_at`, and `n8n_dispatch_error`.
+- **Safe Dispatch Retry**: An approved follow-up whose dispatch failed can be retried safely via `POST /api/v1/followups/{id}/retry-dispatch`, which reuses the existing `delivery_id` without creating duplicate logical deliveries.
 
-### 3. Event Identifiers & Duplicate Protection
-- Every webhook payload includes a mandatory `event_id` (e.g. `evt_01J9...`).
-- **Duplicate Execution Prevention**: If an event ID was previously processed, the backend returns `status="DUPLICATE_IGNORED"` with `duplicate=true` and current delivery status without re-dispatching messages.
-- **Duplicate Follow-up Prevention**: Repeated `followup.schedule` events matching an existing event or scheduled timeslot return the existing record without creating duplicates.
-- **Already-Completed Protection**: Follow-ups that have already reached `COMPLETED` return `status="ALREADY_COMPLETED"` if re-triggered.
+### 3. Scheduling & Timezone Invariants
+- **Explicit Timezones**: `scheduled_at` strictly requires an explicit timezone offset (e.g. `2026-11-05T14:30:00Z` or `+05:30`); ambiguous timezone-naive inputs are rejected with HTTP 422. Comparisons are normalized to UTC.
+- **Early Execution Guard (`NOT_DUE`)**: Calling the execution webhook before `scheduled_at` returns `status="NOT_DUE"` with `next_eligible_at`. No attempt is consumed and no attempt counter is incremented.
+- **Rescheduling Invalidation (`STALE_SCHEDULE`)**: Rescheduling increments `schedule_version` and generates a fresh `delivery_id`. Outdated queued executions return `status="STALE_SCHEDULE"`.
 
-### 4. Bounded Failure Handling & Retries
-- When message delivery encounters a transient failure and `attempt < max_retries`, the backend returns `status="RETRYING"` with `retryable=true` and sets follow-up status to `PROCESSING`.
-- n8n pauses via a Wait node and increments the attempt counter for the next retry.
-- When `attempt >= max_retries` (default: 3), the backend transitions the follow-up to `FAILED`, sets `failure_reason="Max retries (3) exhausted..."`, and returns `retryable=false`.
+### 4. Idempotency, Retries, and Concurrency Contract
+- **Stable Delivery ID vs. Attempt ID**: `delivery_id` is stable across all attempts of a scheduled delivery cycle, while `attempt_id` is unique to each individual attempt.
+- **Database-Backed Uniqueness & Concurrency**: Table `follow_up_delivery_attempts` enforces uniqueness on `attempt_id` and `(delivery_id, attempt)`. Atomic execution claims with PostgreSQL `SELECT ... FOR UPDATE` row locks prevent concurrent duplicate execution.
+- **Idempotent Replay (`DUPLICATE_REPLAY`)**: Replaying the same `attempt_id` returns the recorded outcome with `status="DUPLICATE_REPLAY"` and `duplicate=true` without re-sending messages.
+- **Bounded Retries**: Transient failures return `status="RETRYING"` with `retryable=true` until `attempt >= max_retries` (default: 3), after which the follow-up transitions to `status="FAILED"` with `retryable=false`.
 
 ### 5. Visible Delivery Status in CRM
 The complete delivery history is visible at all times via `GET /api/v1/followups/{id}/delivery`:
@@ -336,7 +336,7 @@ The complete delivery history is visible at all times via `GET /api/v1/followups
 
 ### 6. Mock vs. Live Messaging Setup
 - **Mock Provider (Default / Offline)**: `WHATSAPP_PROVIDER=mock` simulates instant delivery with mock IDs (`mock_wamid_<hash>`) and supports deterministic error injection for testing.
-- **Live Provider (Production)**: Configure `WHATSAPP_PROVIDER=meta` with `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`. Full setup instructions are documented in [`workflows/n8n/README.md`](./workflows/n8n/README.md).
+- **Live Provider (Production)**: Configure `WHATSAPP_PROVIDER=meta` with `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`. Full setup instructions are documented in [`workflows/n8n/README.md`](./workflows/n8n/README.md). Enabling real n8n dispatch (`N8N_DISPATCH_MODE=live`) does not affect message mocking.
 
 ### 7. Running the n8n Follow-up Demo
 

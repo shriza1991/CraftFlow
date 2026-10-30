@@ -38,4 +38,3 @@ def handle_n8n_webhook(
         event_data=event_data,
         secret_header=secret,
     )
-

@@ -18,6 +18,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 CATALOG_HEAD = "b7e2f91a4d10"
 KNOWLEDGE_HEAD = "cbb711ecfc74"
 MERGE_HEAD = "012e8b346d5b"
+LATEST_HEAD = "d71a9e84b2c1"
 BASE_REVISION = "6a8433ba6cdb"
 
 
@@ -38,7 +39,7 @@ def test_alembic_has_exactly_one_head(script_directory: ScriptDirectory):
     """Confirm Alembic has resolved to a single merge head."""
     heads = script_directory.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 Alembic head, found {len(heads)}: {heads}"
-    assert heads[0] == MERGE_HEAD
+    assert heads[0] == LATEST_HEAD
 
 
 def test_merge_revision_preserves_both_histories(script_directory: ScriptDirectory):
@@ -86,8 +87,10 @@ def test_upgrade_fresh_database_sql_path(alembic_config: Config):
     assert "CREATE TABLE knowledge_chunks" in sql
     # Verify catalog generalization
     assert "ALTER TABLE products ALTER COLUMN material DROP NOT NULL" in sql
-    # Verify merge head version recording
+    # Verify merge head and latest head version recording
     assert MERGE_HEAD in sql
+    assert LATEST_HEAD in sql
+    assert "CREATE TABLE follow_up_delivery_attempts" in sql
 
 
 def test_upgrade_from_catalog_generalization_head_sql_path(alembic_config: Config):

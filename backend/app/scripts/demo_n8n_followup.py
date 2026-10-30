@@ -2,11 +2,13 @@
 """Standalone demo script for CraftFlow n8n integration with approved follow-ups.
 
 Demonstrates:
-  1. Approved follow-up moving through n8n automation and mock messaging delivery.
-  2. Duplicate event protection (repeated event IDs do not create duplicate sends).
-  3. Cancelled follow-up rejection (cancelled touchpoints are not dispatched).
-  4. Failure handling, retry progression, and bounded failure exhaustion (max retries).
-  5. Unapproved follow-up protection (enforcing backend human approval gate).
+  1. Early execution rejection (future follow-ups return NOT_DUE without consuming attempts).
+  2. Approved, due follow-up moving through n8n automation and mock messaging delivery.
+  3. Replay of same attempt returning cached DUPLICATE_REPLAY outcome without re-sending.
+  4. Rescheduling invalidating older queued executions (STALE_SCHEDULE rejection).
+  5. Transient failure handling, retry progression, and bounded failure exhaustion (max retries).
+  6. Cancelled follow-up rejection (cancelled touchpoints are not dispatched).
+  7. Unapproved follow-up protection (enforcing backend human approval gate).
 """
 
 import asyncio
@@ -25,7 +27,7 @@ from app.db.models.customer import Customer
 from app.db.models.enums import ActorType, Channel, LeadPriority, LeadStatus
 from app.db.models.lead import Lead
 from app.db.session import SessionLocal, engine
-from app.schemas.follow_up import FollowUpCreate
+from app.schemas.follow_up import FollowUpCreate, FollowUpUpdate
 from app.schemas.n8n_webhook import N8nFollowUpEventRequest
 from app.services.follow_up_service import FollowUpService
 from app.services.n8n_followup_service import N8nFollowUpService
@@ -78,15 +80,16 @@ async def main() -> None:
         db.commit()
 
         # ----------------------------------------------------------------------
-        # SCENARIO 1: Approved Follow-up Moves Through n8n Workflow
+        # SCENARIO 1: Early Execution Rejection (Not Due Yet)
         # ----------------------------------------------------------------------
-        print_step("SCENARIO 1: Approved Follow-up Moves Through n8n Automation")
+        print_step("SCENARIO 1: Early Execution Rejection (Not Due Yet)")
 
+        future_time = datetime.now(UTC) + timedelta(days=2)
         fu_create = FollowUpCreate(
             lead_id=lead.id,
             customer_id=customer.id,
             channel=Channel.WHATSAPP,
-            scheduled_at=datetime.now(UTC) + timedelta(days=2),
+            scheduled_at=future_time,
             reason="Confirm quarry slab inspection and delivery timeline.",
             message_template="Hi Alexander, our artisan team completed the block inspection for your tub.",
         )
@@ -96,102 +99,127 @@ async def main() -> None:
             actor_id="sales_agent_rachel",
             actor_type=ActorType.HUMAN,
         )
-        print(f"Follow-up Scheduled : {follow_up.id}")
-        print(f"Initial Status      : {follow_up.status}")
-        print(f"Initial Approval    : {follow_up.metadata_.get('approval_status')}")
-
-        # Human Reviewer Approves Follow-up
-        print("\n[Human Action] Reviewing and approving follow-up...")
-        approved_fu = await FollowUpService.approve_followup(
+        await FollowUpService.approve_followup(
             db=db,
             followup_id=follow_up.id,
             actor_id="sales_manager_david",
-            trigger_n8n=False,  # We execute via n8n webhook directly below
-            reviewer_notes="Client confirmed availability for Thursday morning.",
+            trigger_n8n=False,
         )
-        print(f"Approval Result     : {approved_fu.metadata_.get('approval_status')}")
-        print(f"Approved By         : {approved_fu.metadata_.get('approved_by')}")
+        print(
+            f"Follow-up Scheduled : {follow_up.id} (Scheduled at: {follow_up.scheduled_at.isoformat()})"
+        )
+        print(f"Approval Result     : {follow_up.approval_status}")
 
-        # n8n Relays Execution Event via Authenticated Webhook
-        event_1 = f"evt_{uuid4().hex[:12]}"
-        req1 = N8nFollowUpEventRequest(
-            event_id=event_1,
+        early_req = N8nFollowUpEventRequest(
+            delivery_id=follow_up.delivery_id,
+            attempt_id=f"att_early_{uuid4().hex[:8]}",
             event_type="followup.execute",
-            followup_id=approved_fu.id,
+            followup_id=follow_up.id,
+            schedule_version=follow_up.schedule_version,
+            attempt=1,
+        )
+        print("\n[n8n Webhook Relay] Executing prematurely before due time...")
+        early_res = N8nFollowUpService.process_event(
+            db=db, event_data=early_req, secret_header=SECRET
+        )
+        print(f"Relay Response Status : {early_res.status} (Expected: NOT_DUE)")
+        print(f"Next Eligible At      : {early_res.next_eligible_at}")
+        print(f"Attempts Consumed     : {follow_up.current_attempt} (Expected: 0)")
+
+        # ----------------------------------------------------------------------
+        # SCENARIO 2: Due Execution & Replay Idempotency
+        # ----------------------------------------------------------------------
+        print_step("SCENARIO 2: Due Follow-up Execution & Replay Idempotency")
+
+        # Reschedule follow-up to now (due)
+        now_time = datetime.now(UTC) - timedelta(seconds=5)
+        FollowUpService.update_followup(
+            db=db,
+            followup_id=follow_up.id,
+            updates=FollowUpUpdate(scheduled_at=now_time),
+        )
+        db.refresh(follow_up)
+        print(
+            f"Follow-up Rescheduled to Due Time: {follow_up.scheduled_at.isoformat()} (Version: {follow_up.schedule_version})"
+        )
+
+        due_attempt_id = f"att_1_{follow_up.delivery_id}"
+        due_req = N8nFollowUpEventRequest(
+            delivery_id=follow_up.delivery_id,
+            attempt_id=due_attempt_id,
+            event_type="followup.execute",
+            followup_id=follow_up.id,
+            schedule_version=follow_up.schedule_version,
             attempt=1,
             max_retries=3,
         )
-        print(f"\n[n8n Webhook Relay] Dispatching event '{event_1}' to /api/v1/webhooks/n8n...")
-        res1 = N8nFollowUpService.process_event(db=db, event_data=req1, secret_header=SECRET)
-
-        print(f"Relay Response Status : {res1.status}")
+        print(
+            f"\n[n8n Webhook Relay] Dispatching due execution (delivery_id='{follow_up.delivery_id}')..."
+        )
+        res1 = N8nFollowUpService.process_event(db=db, event_data=due_req, secret_header=SECRET)
+        print(f"Relay Response Status : {res1.status} (Expected: DELIVERED)")
         print(f"Delivery Status       : {res1.delivery_status}")
         print(
             f"Provider Message ID   : {res1.delivery_record.provider_message_id if res1.delivery_record else 'N/A'}"
         )
-        print(f"Message               : {res1.message}")
 
-        # Check visible delivery status
-        deliv1 = FollowUpService.get_delivery_status(db, approved_fu.id)
+        # Replay identical attempt
+        print(f"\n[n8n Replay] Re-sending identical attempt '{due_attempt_id}'...")
+        res_replay = N8nFollowUpService.process_event(
+            db=db, event_data=due_req, secret_header=SECRET
+        )
+        print(f"Relay Response Status : {res_replay.status} (Duplicate: {res_replay.duplicate})")
+        print(f"Message               : {res_replay.message}")
+
+        deliv_status = FollowUpService.get_delivery_status(db, follow_up.id)
         print(
-            f"Visible Status in CRM : {deliv1.delivery_status} (Attempts: {deliv1.delivery_attempts})"
+            f"Recorded Delivery Records in DB: {len(deliv_status.delivery_records)} (Expected: exactly 1)"
         )
 
         # ----------------------------------------------------------------------
-        # SCENARIO 2: Repeated Event ID Protection (Idempotency)
+        # SCENARIO 3: Rescheduled Follow-up Invalidation (Stale Execution Rejection)
         # ----------------------------------------------------------------------
-        print_step("SCENARIO 2: Repeated Event ID Duplicate Protection (No Duplicate Sends)")
-        print(f"[n8n Replay] Re-sending identical event '{event_1}'...")
-        res2 = N8nFollowUpService.process_event(db=db, event_data=req1, secret_header=SECRET)
-        print(f"Relay Response Status : {res2.status} (Duplicate: {res2.duplicate})")
-        print(f"Message               : {res2.message}")
-
-        deliv2 = FollowUpService.get_delivery_status(db, approved_fu.id)
-        print(
-            f"Total Delivery Attempts Recorded: {len(deliv2.delivery_records)} (Expected: exactly 1)"
-        )
-
-        # ----------------------------------------------------------------------
-        # SCENARIO 3: Cancelled Follow-up Protection
-        # ----------------------------------------------------------------------
-        print_step("SCENARIO 3: Cancelled Follow-up Rejection")
-        fu_cancel_create = FollowUpCreate(
+        print_step("SCENARIO 3: Rescheduling Invalidates Stale Queued Executions")
+        fu_resched_create = FollowUpCreate(
             lead_id=lead.id,
             customer_id=customer.id,
             channel=Channel.WHATSAPP,
-            scheduled_at=datetime.now(UTC) + timedelta(days=5),
-            reason="Check plumbing rough-in dimensions.",
+            scheduled_at=datetime.now(UTC) + timedelta(days=1),
+            reason="Coordinate crane arrival and street permit.",
         )
-        fu_to_cancel = FollowUpService.schedule_followup(
-            db=db, followup_in=fu_cancel_create, actor_id="sales_agent"
+        fu_resched = FollowUpService.schedule_followup(db=db, followup_in=fu_resched_create)
+        await FollowUpService.approve_followup(db=db, followup_id=fu_resched.id, trigger_n8n=False)
+        old_delivery_id = fu_resched.delivery_id
+        old_version = fu_resched.schedule_version
+        print(
+            f"Created Follow-up: {fu_resched.id} (Version: {old_version}, Delivery ID: {old_delivery_id})"
         )
-        await FollowUpService.approve_followup(
-            db=db, followup_id=fu_to_cancel.id, actor_id="sales_manager", trigger_n8n=False
-        )
-        print(f"Follow-up Created & Approved: {fu_to_cancel.id}")
 
-        print("[Human Action] Cancelling follow-up: Customer changed project scope.")
-        cancelled_fu = FollowUpService.cancel_followup(
+        print("[User Action] Client requested postponing by one week...")
+        FollowUpService.update_followup(
             db=db,
-            followup_id=fu_to_cancel.id,
-            reason="Customer changed project scope to powder room.",
-            actor_id="sales_agent",
+            followup_id=fu_resched.id,
+            updates=FollowUpUpdate(scheduled_at=datetime.now(UTC) + timedelta(days=8)),
         )
-        print(f"Follow-up Status: {cancelled_fu.status}")
+        db.refresh(fu_resched)
+        print(
+            f"Rescheduled Follow-up: new version {fu_resched.schedule_version}, new delivery_id '{fu_resched.delivery_id}'"
+        )
 
-        print("\n[n8n Webhook Relay] Attempting execution on cancelled follow-up...")
-        res3 = N8nFollowUpService.process_event(
-            db=db,
-            event_data=N8nFollowUpEventRequest(
-                event_id=f"evt_{uuid4().hex[:12]}",
-                event_type="followup.execute",
-                followup_id=cancelled_fu.id,
-            ),
-            secret_header=SECRET,
+        print("\n[n8n Relay] Stale execution queued before reschedule attempts to execute...")
+        stale_req = N8nFollowUpEventRequest(
+            delivery_id=old_delivery_id,
+            attempt_id=f"att_stale_{uuid4().hex[:6]}",
+            event_type="followup.execute",
+            followup_id=fu_resched.id,
+            schedule_version=old_version,
+            attempt=1,
         )
-        print(f"Relay Response Status : {res3.status}")
-        print(f"Message               : {res3.message}")
-        print(f"Delivery Record Created: {res3.delivery_record is not None} (Expected: False)")
+        res_stale = N8nFollowUpService.process_event(
+            db=db, event_data=stale_req, secret_header=SECRET
+        )
+        print(f"Relay Response Status : {res_stale.status} (Expected: STALE_SCHEDULE)")
+        print(f"Message               : {res_stale.message}")
 
         # ----------------------------------------------------------------------
         # SCENARIO 4: Delivery Failure, Retry Progression, & Bounded Exhaustion
@@ -201,22 +229,20 @@ async def main() -> None:
             lead_id=lead.id,
             customer_id=customer.id,
             channel=Channel.WHATSAPP,
-            scheduled_at=datetime.now(UTC) + timedelta(days=7),
+            scheduled_at=datetime.now(UTC) - timedelta(minutes=1),  # Due now
             reason="Verify final crating and air-freight booking.",
         )
-        fu_retry = FollowUpService.schedule_followup(
-            db=db, followup_in=fu_retry_create, actor_id="agent"
-        )
-        await FollowUpService.approve_followup(
-            db=db, followup_id=fu_retry.id, actor_id="manager", trigger_n8n=False
-        )
+        fu_retry = FollowUpService.schedule_followup(db=db, followup_in=fu_retry_create)
+        await FollowUpService.approve_followup(db=db, followup_id=fu_retry.id, trigger_n8n=False)
 
         for attempt in range(1, 4):
-            evt_id = f"evt_attempt_{attempt}_{uuid4().hex[:8]}"
+            att_id = f"att_{attempt}_{fu_retry.delivery_id}_{uuid4().hex[:6]}"
             req = N8nFollowUpEventRequest(
-                event_id=evt_id,
+                delivery_id=fu_retry.delivery_id,
+                attempt_id=att_id,
                 event_type="followup.execute",
                 followup_id=fu_retry.id,
+                schedule_version=fu_retry.schedule_version,
                 attempt=attempt,
                 max_retries=3,
                 payload={
@@ -224,7 +250,7 @@ async def main() -> None:
                     "simulate_error": "Carrier network gateway timeout (HTTP 504)",
                 },
             )
-            print(f"\n[n8n Relay Attempt {attempt}/3] Dispatching event '{evt_id}'...")
+            print(f"\n[n8n Relay Attempt {attempt}/3] Dispatching attempt '{att_id}'...")
             res_retry = N8nFollowUpService.process_event(
                 db=db, event_data=req, secret_header=SECRET
             )
@@ -232,7 +258,6 @@ async def main() -> None:
             print(f"  CRM Status     : {res_retry.delivery_status}")
             print(f"  Message        : {res_retry.message}")
 
-        # Verify bounded exhaustion
         deliv_retry = FollowUpService.get_delivery_status(db, fu_retry.id)
         print("\nFinal State after Max Retries:")
         print(f"  Overall Status : {deliv_retry.status} (Expected: FAILED)")
@@ -240,36 +265,64 @@ async def main() -> None:
         print(f"  Total Attempts : {len(deliv_retry.delivery_records)} / {deliv_retry.max_retries}")
 
         # ----------------------------------------------------------------------
-        # SCENARIO 5: Unapproved Follow-up Protection
+        # SCENARIO 5: Cancelled Follow-up Rejection
         # ----------------------------------------------------------------------
-        print_step("SCENARIO 5: Unapproved Follow-up Protection")
-        fu_unapproved_create = FollowUpCreate(
-            lead_id=lead.id,
-            customer_id=customer.id,
-            channel=Channel.WHATSAPP,
-            scheduled_at=datetime.now(UTC) + timedelta(days=10),
-            reason="Unapproved promotional follow-up.",
+        print_step("SCENARIO 5: Cancelled Follow-up Rejection")
+        fu_canc = FollowUpService.schedule_followup(
+            db=db,
+            followup_in=FollowUpCreate(
+                lead_id=lead.id,
+                customer_id=customer.id,
+                channel=Channel.WHATSAPP,
+                scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+                reason="Check plumbing rough-in dimensions.",
+            ),
         )
-        fu_unappr = FollowUpService.schedule_followup(
-            db=db, followup_in=fu_unapproved_create, actor_id="agent"
+        await FollowUpService.approve_followup(db=db, followup_id=fu_canc.id, trigger_n8n=False)
+        FollowUpService.cancel_followup(
+            db=db, followup_id=fu_canc.id, reason="Customer cancelled project."
         )
-        print(
-            f"Created Follow-up: {fu_unappr.id} (Approval: {fu_unappr.metadata_.get('approval_status')})"
-        )
+        print(f"Cancelled Follow-up: {fu_canc.id} (Status: {fu_canc.status})")
 
-        print("[n8n Relay] Attempting execution before human approval...")
-        res_unappr = N8nFollowUpService.process_event(
+        canc_res = N8nFollowUpService.process_event(
             db=db,
             event_data=N8nFollowUpEventRequest(
-                event_id=f"evt_{uuid4().hex[:12]}",
+                delivery_id=fu_canc.delivery_id,
+                attempt_id=f"att_canc_{uuid4().hex[:6]}",
+                event_type="followup.execute",
+                followup_id=fu_canc.id,
+            ),
+            secret_header=SECRET,
+        )
+        print(f"Relay Response Status : {canc_res.status} (Expected: CANCELLED)")
+
+        # ----------------------------------------------------------------------
+        # SCENARIO 6: Unapproved Follow-up Protection
+        # ----------------------------------------------------------------------
+        print_step("SCENARIO 6: Unapproved Follow-up Protection")
+        fu_unappr = FollowUpService.schedule_followup(
+            db=db,
+            followup_in=FollowUpCreate(
+                lead_id=lead.id,
+                customer_id=customer.id,
+                channel=Channel.WHATSAPP,
+                scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+                reason="Unapproved promotional follow-up.",
+            ),
+        )
+        print(f"Created Follow-up: {fu_unappr.id} (Approval: {fu_unappr.approval_status})")
+
+        unappr_res = N8nFollowUpService.process_event(
+            db=db,
+            event_data=N8nFollowUpEventRequest(
+                delivery_id=fu_unappr.delivery_id,
+                attempt_id=f"att_unappr_{uuid4().hex[:6]}",
                 event_type="followup.execute",
                 followup_id=fu_unappr.id,
             ),
             secret_header=SECRET,
         )
-        print(f"Relay Response Status : {res_unappr.status}")
-        print(f"Delivery Status       : {res_unappr.delivery_status}")
-        print(f"Message               : {res_unappr.message}")
+        print(f"Relay Response Status : {unappr_res.status} (Expected: UNAPPROVED)")
 
         print_header("Demo Completed Successfully!")
 

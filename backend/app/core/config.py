@@ -102,8 +102,10 @@ class Settings(BaseSettings):
     VECTOR_DB_PROVIDER: str = "pgvector"
 
     # Automation Boundary (n8n)
+    N8N_DISPATCH_MODE: str = "mock"
     N8N_BASE_URL: str = "http://localhost:5678"
     N8N_WEBHOOK_SECRET: str = "dev_n8n_webhook_secret_placeholder"
+    N8N_FOLLOWUP_WEBHOOK_PATH: str = "webhook/craftflow-followup"
 
     @property
     def is_production(self) -> bool:

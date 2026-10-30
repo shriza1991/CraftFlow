@@ -1,11 +1,33 @@
 """Pydantic schemas for FollowUps."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models.enums import Channel, FollowUpStatus
+
+PROTECTED_METADATA_KEYS: frozenset[str] = frozenset(
+    {
+        "approval_status",
+        "approved_at",
+        "approved_by",
+        "delivery_status",
+        "delivery_id",
+        "delivery_attempts",
+        "current_attempt",
+        "max_retries",
+        "delivery_records",
+        "processed_event_ids",
+        "n8n_dispatch_status",
+        "n8n_dispatch_error",
+        "n8n_dispatched_at",
+        "schedule_version",
+        "claims",
+        "claim_expires_at",
+        "scheduling_event_id",
+    }
+)
 
 
 class FollowUpBase(BaseModel):
@@ -24,6 +46,15 @@ class FollowUpBase(BaseModel):
         serialization_alias="metadata",
     )
 
+    @field_validator("scheduled_at")
+    @classmethod
+    def validate_timezone_aware(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            raise ValueError(
+                "scheduled_at must include an explicit timezone offset (e.g. '2026-10-31T15:00:00Z' or '+00:00'). Ambiguous timezone-free datetimes are rejected."
+            )
+        return v.astimezone(UTC)
+
 
 class FollowUpCreate(FollowUpBase):
     pass
@@ -41,9 +72,29 @@ class FollowUpUpdate(BaseModel):
         serialization_alias="metadata",
     )
 
+    @field_validator("scheduled_at")
+    @classmethod
+    def validate_timezone_aware(cls, v: datetime | None) -> datetime | None:
+        if v is None:
+            return None
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            raise ValueError(
+                "scheduled_at must include an explicit timezone offset (e.g. '2026-10-31T15:00:00Z' or '+00:00'). Ambiguous timezone-free datetimes are rejected."
+            )
+        return v.astimezone(UTC)
+
 
 class FollowUpResponse(FollowUpBase):
     id: str
+    approval_status: str = "PENDING_APPROVAL"
+    delivery_status: str = "PENDING"
+    delivery_id: str | None = None
+    schedule_version: int = 1
+    current_attempt: int = 0
+    max_retries: int = 3
+    n8n_dispatch_status: str = "PENDING"
+    n8n_dispatch_error: str | None = None
+    n8n_dispatched_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -68,3 +119,16 @@ class FollowUpCancelRequest(BaseModel):
     reason: str = Field(
         ..., min_length=1, max_length=500, description="Reason for cancelling the follow-up"
     )
+
+
+class FollowUpDispatchResponse(BaseModel):
+    """Response returned when triggering or retrying n8n workflow dispatch."""
+
+    followup_id: str
+    delivery_id: str | None = None
+    schedule_version: int
+    scheduled_at: datetime
+    n8n_dispatch_status: str
+    n8n_dispatch_error: str | None = None
+    n8n_dispatched_at: datetime | None = None
+    message: str

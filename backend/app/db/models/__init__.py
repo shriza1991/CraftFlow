@@ -25,6 +25,7 @@ from app.db.models.enums import (
     ToolCallStatus,
 )
 from app.db.models.follow_up import FollowUp
+from app.db.models.follow_up_delivery_attempt import FollowUpDeliveryAttempt
 from app.db.models.knowledge_chunk import KnowledgeChunk
 from app.db.models.knowledge_document import KnowledgeDocument
 from app.db.models.knowledge_source import KnowledgeSource
@@ -45,6 +46,7 @@ __all__ = [
     "Conversation",
     "Message",
     "FollowUp",
+    "FollowUpDeliveryAttempt",
     "AgentRun",
     "ToolCall",
     "AuditLog",

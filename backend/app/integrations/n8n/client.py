@@ -13,12 +13,18 @@ class N8nWebhookClient(ExternalClient):
     """Client for triggering inbound n8n automation workflows securely."""
 
     def __init__(
-        self, base_url: str | None = None, secret: str | None = None, is_mock: bool = True
+        self,
+        base_url: str | None = None,
+        secret: str | None = None,
+        is_mock: bool | None = None,
     ):
         settings = get_settings()
         self.base_url = (base_url or settings.N8N_BASE_URL).rstrip("/")
         self.secret = secret or settings.N8N_WEBHOOK_SECRET
-        self.is_mock = is_mock
+        if is_mock is not None:
+            self.is_mock = is_mock
+        else:
+            self.is_mock = settings.N8N_DISPATCH_MODE.lower() == "mock"
 
     async def ping(self) -> bool:
         return True
@@ -32,6 +38,9 @@ class N8nWebhookClient(ExternalClient):
         headers = {
             "Content-Type": "application/json",
             "X-Webhook-Secret": self.secret,
+            "X-Request-ID": payload.get("event_id")
+            or payload.get("delivery_id")
+            or "craftflow-dispatch",
         }
 
         try:

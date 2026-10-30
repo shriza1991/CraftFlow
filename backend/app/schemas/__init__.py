@@ -1,9 +1,11 @@
 """Pydantic schemas package."""
 
 from app.schemas.follow_up import (
+    PROTECTED_METADATA_KEYS,
     FollowUpApproveRequest,
     FollowUpCancelRequest,
     FollowUpCreate,
+    FollowUpDispatchResponse,
     FollowUpResponse,
     FollowUpUpdate,
 )
@@ -33,6 +35,7 @@ __all__ = [
     "FollowUpCancelRequest",
     "FollowUpCreate",
     "FollowUpDeliveryStatusResponse",
+    "FollowUpDispatchResponse",
     "FollowUpResponse",
     "FollowUpUpdate",
     "InquiryApprovalRequest",
@@ -41,5 +44,6 @@ __all__ = [
     "InquiryWorkflowResponse",
     "N8nFollowUpEventRequest",
     "N8nFollowUpEventResponse",
+    "PROTECTED_METADATA_KEYS",
     "WorkflowStepResult",
 ]

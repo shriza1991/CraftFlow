@@ -16,6 +16,10 @@ os.environ["AI_PROVIDER"] = "mock"
 os.environ["EMBEDDING_PROVIDER"] = "mock"
 os.environ["CRM_PROVIDER"] = "mock"
 os.environ["WHATSAPP_PROVIDER"] = "mock"
+os.environ["N8N_DISPATCH_MODE"] = "mock"
+os.environ["API_KEY_ADMIN"] = "cf_admin_dev_key_2026"
+os.environ["API_KEY_AGENT"] = "cf_agent_dev_key_2026"
+os.environ["API_KEY_VIEWER"] = "cf_viewer_dev_key_2026"
 
 # 2. Configure isolated test database URL to prevent mutating development data
 from app.core.config import Settings, get_settings  # noqa: E402

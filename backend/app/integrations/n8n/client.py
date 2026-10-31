@@ -54,7 +54,7 @@ class N8nWebhookClient(ExternalClient):
                     )
                 return (
                     res.json()
-                    if res.headers.get("content-type") == "application/json"
+                    if "application/json" in (res.headers.get("content-type") or "")
                     else {"status": "ok"}
                 )
         except httpx.RequestError as exc:

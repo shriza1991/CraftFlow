@@ -1,0 +1,31 @@
+{
+  "businesses": [
+    {
+      "id": "ages-art",
+      "name": "Ages Art",
+      "description": "Custom stone products",
+      "sku": "EVAL-STONE-01",
+      "product": "Carrara Basin",
+      "currency": "EUR",
+      "price": "350.00",
+      "lead_time_days": 3,
+      "fact": "The Carrara Basin requires a 50% deposit and a three-day production lead time.",
+      "question": "What deposit is needed for the Carrara Basin?",
+      "reply": "The Carrara Basin requires a 50% deposit."
+    },
+    {
+      "id": "design-studio",
+      "name": "Northstar Studio",
+      "description": "Interior design services",
+      "sku": "EVAL-DESIGN-01",
+      "product": "Room Consultation",
+      "currency": "INR",
+      "price": "2500.00",
+      "lead_time_days": 2,
+      "fact": "The Room Consultation lasts 60 minutes and includes one written planning summary.",
+      "question": "How long does the Room Consultation last?",
+      "reply": "The Room Consultation lasts 60 minutes."
+    }
+  ],
+  "scenarios": ["supported", "unsupported", "provider_failure", "delivery_failure"]
+}

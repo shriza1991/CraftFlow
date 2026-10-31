@@ -87,3 +87,6 @@ jobs:
       - name: Run full test suite (unit and PostgreSQL/pgvector integration)
         run: |
           python -m pytest backend/tests -v
+
+      - name: Evaluate offline inquiry contracts
+        run: python backend/app/scripts/evaluate.py --output artifacts/evaluation

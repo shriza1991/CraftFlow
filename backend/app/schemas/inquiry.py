@@ -99,6 +99,8 @@ class InquiryWorkflowResponse(BaseModel):
     outbound_message_sent: bool = Field(
         default=False, description="Whether an outbound customer message has been dispatched"
     )
+    delivery_status: str = "PENDING_APPROVAL"
+    delivery_error: str | None = None
     steps: list[WorkflowStepResult] = Field(default_factory=list)
     error: str | None = None
 

@@ -397,3 +397,11 @@ python -m ruff format --check backend
 A GitHub Actions workflow is defined in `.github/workflows/ci.yml`. It runs automatically on all pull requests and pushes targeting `main`:
 1. **Lint Job**: Validates code style using `ruff check backend` and `ruff format --check backend`.
 2. **Test Job**: Launches a `pgvector/pgvector:pg16` service container, verifies the single Alembic head, applies database migrations, and executes all unit and PostgreSQL/pgvector integration tests against the isolated test database. CI reports a build failure if any check or test fails.
+
+### Continuing development
+
+Run the [offline inquiry contract evaluation](docs/evaluation.md) to check two
+business configurations without external services. Complete the
+[manual n8n outcome branches](docs/manual-n8n-outcomes.md) in your own editor,
+then track the remaining integration work in the
+[completion checklist](docs/next-milestones.md).

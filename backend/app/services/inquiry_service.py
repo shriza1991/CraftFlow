@@ -310,7 +310,7 @@ class InquiryService:
             if request.preferred_product_skus:
                 for sku in request.preferred_product_skus:
                     prod = ProductService.get_by_sku(db, sku)
-                    if prod and prod not in matched_products:
+                    if prod and prod.is_active and prod not in matched_products:
                         matched_products.append(prod)
 
             # 2. Text keyword search active catalog
@@ -400,7 +400,7 @@ class InquiryService:
                 if matched_products:
                     catalog_text = "\n".join(
                         f"- Product: {p.name} (SKU: {p.sku}) | Material: {p.material or 'N/A'} | "
-                        f"Base Price: ${p.base_price} | Lead Time: {p.lead_time_days // 7 if p.lead_time_days else 'N/A'} weeks | "
+                        f"Base Price: {p.currency} {p.base_price} | Lead Time: {p.lead_time_days} days | "
                         f"Variants: {', '.join(v.name for v in p.variants) if p.variants else 'Standard'}"
                         for p in matched_products
                     )
@@ -408,7 +408,10 @@ class InquiryService:
 
                 combined_context = "\n\n".join(context_sections)
 
-                system_prompt = build_grounded_system_prompt()
+                system_prompt = build_grounded_system_prompt(
+                    business_name=rag.business_name,
+                    business_description=rag.business_description,
+                )
                 prompt_messages = [
                     LLMMessage(
                         role="system",
@@ -643,6 +646,8 @@ class InquiryService:
             "draft_message_id": draft_message.id if draft_message else None,
             "workflow_status": workflow_status,
             "grounded": grounded,
+            "evidence_sources": [source.model_dump(mode="json") for source in evidence_sources],
+            "delivery_status": "PENDING_APPROVAL",
             "steps": [s.model_dump(mode="json") for s in steps],
         }
 
@@ -714,7 +719,9 @@ class InquiryService:
         whatsapp_service: WhatsAppService | None = None,
     ) -> InquiryWorkflowResponse:
         """Human approval action: approve draft and dispatch the outbound message."""
-        agent_run = db.get(AgentRun, workflow_run_id)
+        agent_run = db.scalar(
+            select(AgentRun).where(AgentRun.id == workflow_run_id).with_for_update()
+        )
         if not agent_run:
             raise NotFoundException(
                 message=f"Inquiry workflow run '{workflow_run_id}' not found.",
@@ -723,120 +730,145 @@ class InquiryService:
 
         metadata = dict(agent_run.metadata_ or {})
         current_approval = metadata.get("approval_status")
-        if current_approval == "APPROVED":
+        if current_approval != "PENDING_APPROVAL":
             raise ValidationException(
-                message="This inquiry response has already been approved and dispatched.",
-                details={"workflow_run_id": workflow_run_id},
+                message=(
+                    "This inquiry response has already been approved. Inspect delivery before retrying."
+                    if current_approval == "APPROVED"
+                    else "This inquiry response was previously rejected."
+                    if current_approval == "REJECTED"
+                    else "Only a pending draft may be approved."
+                ),
+                details={"workflow_run_id": workflow_run_id, "approval_status": current_approval},
             )
-        if current_approval == "REJECTED":
-            raise ValidationException(
-                message="This inquiry response was previously rejected.",
-                details={"workflow_run_id": workflow_run_id},
-            )
-
         draft_msg_id = metadata.get("draft_message_id")
-        if not draft_msg_id:
+        msg = db.get(Message, draft_msg_id) if draft_msg_id else None
+        if not msg:
             raise ValidationException(
                 message="No drafted message found for this workflow run.",
                 details={"workflow_run_id": workflow_run_id},
             )
-
-        msg = db.get(Message, draft_msg_id)
-        if not msg:
-            raise NotFoundException(
-                message=f"Draft message '{draft_msg_id}' not found.",
-                details={"draft_message_id": draft_msg_id},
-            )
+        if edited_content is not None and not edited_content.strip():
+            raise ValidationException(message="Approved message must not be blank.", details={})
 
         customer = db.get(Customer, agent_run.customer_id) if agent_run.customer_id else None
-        now = datetime.now(UTC)
-
-        # 1. Update message content if human edited it
-        final_content = (
-            edited_content.strip() if edited_content and edited_content.strip() else msg.content
+        conv = (
+            db.get(Conversation, agent_run.conversation_id) if agent_run.conversation_id else None
         )
+        now = datetime.now(UTC)
+        final_content = edited_content.strip() if edited_content is not None else msg.content
+        sent = False
+        delivery_error = None
+        provider_message_id = None
+        provider_mode = "internal"
+
+        # Approval and successful dispatch are separate facts. Never turn a provider
+        # exception or unsupported channel into a successful-send record.
+        if conv and conv.channel == Channel.WEBSITE.value:
+            sent = True  # Publish the reply to the application's persisted website conversation.
+        elif conv and conv.channel == Channel.WHATSAPP.value:
+            target_phone = (customer.whatsapp_number or customer.phone) if customer else None
+            if not target_phone:
+                delivery_error = "Customer has no WhatsApp recipient number."
+            else:
+                ws = whatsapp_service or WhatsAppService()
+                provider_mode = (
+                    "mock" if getattr(getattr(ws, "client", None), "is_mock", False) else "whatsapp"
+                )
+                try:
+                    result = await ws.send_customer_reply(
+                        customer_phone=target_phone, text=final_content
+                    )
+                    messages = result.get("messages", []) if isinstance(result, dict) else []
+                    provider_message_id = messages[0].get("id") if messages else None
+                    if not provider_message_id:
+                        delivery_error = (
+                            "Messaging provider did not acknowledge the message with an ID."
+                        )
+                    else:
+                        sent = True
+                except Exception:
+                    logger.exception("Inquiry message dispatch failed for run %s", workflow_run_id)
+                    delivery_error = (
+                        "Messaging provider failed; inspect provider status before retrying."
+                    )
+        else:
+            delivery_error = "No delivery adapter is available for this conversation channel."
+
+        delivery_status = "SENT" if sent else "FAILED"
         msg.content = final_content
-        msg.status = MessageStatus.SENT.value
-        msg.sent_at = now
+        msg.status = MessageStatus.SENT.value if sent else MessageStatus.FAILED.value
+        msg.sent_at = now if sent else None
+        msg.external_message_id = provider_message_id
         msg.metadata_ = {
-            **msg.metadata_,
+            **(msg.metadata_ or {}),
             "is_draft": False,
             "approval_status": "APPROVED",
             "approved_by": actor_id,
             "approved_at": now.isoformat(),
+            "delivery_status": delivery_status,
+            "delivery_error": delivery_error,
+            "provider_mode": provider_mode,
         }
 
-        # 2. Dispatch through external channel if WhatsApp
-        conv = (
-            db.get(Conversation, agent_run.conversation_id) if agent_run.conversation_id else None
-        )
-        if (
-            conv
-            and conv.channel == Channel.WHATSAPP.value
-            and customer
-            and (customer.phone or customer.whatsapp_number)
-        ):
-            ws = whatsapp_service or WhatsAppService()
-            target_phone = customer.phone or customer.whatsapp_number
-            try:
-                await ws.send_customer_reply(customer_phone=target_phone, text=final_content)
-            except Exception as exc:
-                logger.error(f"WhatsApp dispatch failed upon approval: {exc}", exc_info=True)
-
-        # 3. If lead was in NEW status, progress to CONTACTED
-        if agent_run.lead_id:
+        # Keep this mutation in the approval transaction rather than calling a
+        # service that commits early and releases the execution lock.
+        if sent and agent_run.lead_id:
             lead = db.get(Lead, agent_run.lead_id)
             if lead and lead.status == LeadStatus.NEW.value:
-                LeadService.update_lead(
-                    db=db,
-                    lead_id=lead.id,
-                    updates=LeadUpdate(
-                        status=LeadStatus.CONTACTED,
-                        last_contacted_at=now,
-                        notes=(
-                            f"{lead.notes or ''}\n\n"
-                            f"[{now.strftime('%Y-%m-%d %H:%M:%S UTC')}] Approved and dispatched response."
-                        ).strip(),
-                    ),
-                    actor_id=actor_id,
-                    actor_type=actor_type,
-                )
+                lead.status = LeadStatus.CONTACTED.value
+                lead.last_contacted_at = now
 
-        # 4. Update AgentRun metadata
-        metadata["approval_status"] = "APPROVED"
-        metadata["outbound_message_sent"] = True
-        metadata["approved_at"] = now.isoformat()
-        metadata["approved_by"] = actor_id
-
-        # Update outbound_dispatch step in steps list
+        metadata.update(
+            {
+                "approval_status": "APPROVED",
+                "outbound_message_sent": sent,
+                "approved_at": now.isoformat(),
+                "approved_by": actor_id,
+                "delivery_status": delivery_status,
+                "delivery_error": delivery_error,
+                "provider_mode": provider_mode,
+            }
+        )
+        if not sent:
+            metadata["workflow_status"] = "NEEDS_REVIEW"
         raw_steps = metadata.get("steps", [])
-        for step_dict in raw_steps:
-            if step_dict.get("step_name") == "outbound_dispatch":
-                step_dict["status"] = "COMPLETED"
-                step_dict["completed_at"] = now.isoformat()
-                step_dict["details"] = {
-                    "approved_by": actor_id,
-                    "outbound_message_sent": True,
-                    "approval_status": "APPROVED",
-                    "dispatched_at": now.isoformat(),
-                }
+        for step in raw_steps:
+            if step.get("step_name") == "outbound_dispatch":
+                step.update(
+                    {
+                        "status": "COMPLETED" if sent else "FAILED",
+                        "completed_at": now.isoformat(),
+                        "error": delivery_error,
+                        "details": {
+                            "approved_by": actor_id,
+                            "approval_status": "APPROVED",
+                            "outbound_message_sent": sent,
+                            "delivery_status": delivery_status,
+                            "provider_mode": provider_mode,
+                        },
+                    }
+                )
         metadata["steps"] = raw_steps
         agent_run.metadata_ = metadata
-
-        # 5. Audit Log
         AuditService.record(
             db=db,
-            action="OUTBOUND_MESSAGE_APPROVED_AND_SENT",
+            action="OUTBOUND_MESSAGE_APPROVED_AND_SENT"
+            if sent
+            else "OUTBOUND_MESSAGE_APPROVED_DELIVERY_FAILED",
             entity_type="Message",
             entity_id=msg.id,
             actor_id=actor_id,
             actor_type=actor_type,
-            description=f"Human approved and sent response for inquiry workflow run '{workflow_run_id}'.",
-            after_state={"message_id": msg.id, "approved_by": actor_id, "outbound_sent": True},
+            description=f"Inquiry response approved; delivery outcome: {delivery_status}.",
+            after_state={
+                "message_id": msg.id,
+                "approved_by": actor_id,
+                "outbound_sent": sent,
+                "delivery_status": delivery_status,
+            },
         )
-
         db.commit()
-
         return cls.get_inquiry_status(db, workflow_run_id)
 
     @classmethod
@@ -849,7 +881,9 @@ class InquiryService:
         actor_type: ActorType | str = ActorType.HUMAN,
     ) -> InquiryWorkflowResponse:
         """Human rejection action: declines to dispatch drafted response."""
-        agent_run = db.get(AgentRun, workflow_run_id)
+        agent_run = db.scalar(
+            select(AgentRun).where(AgentRun.id == workflow_run_id).with_for_update()
+        )
         if not agent_run:
             raise NotFoundException(
                 message=f"Inquiry workflow run '{workflow_run_id}' not found.",
@@ -882,6 +916,7 @@ class InquiryService:
                 }
 
         now = datetime.now(UTC)
+        metadata["delivery_status"] = "REJECTED"
         metadata["approval_status"] = "REJECTED"
         metadata["outbound_message_sent"] = False
         metadata["rejection_reason"] = reason
@@ -936,7 +971,10 @@ class InquiryService:
                 draft_obj = DraftResponse(
                     content=msg.content,
                     grounded=metadata.get("grounded", False),
-                    evidence_sources=[],
+                    evidence_sources=[
+                        EvidenceCitation.model_validate(source)
+                        for source in metadata.get("evidence_sources", [])
+                    ],
                     approval_status=metadata.get("approval_status", "PENDING_APPROVAL"),
                     message_id=msg.id,
                     approved_by=metadata.get("approved_by"),
@@ -971,6 +1009,8 @@ class InquiryService:
             lead_id=agent_run.lead_id,
             draft=draft_obj,
             outbound_message_sent=metadata.get("outbound_message_sent", False),
+            delivery_status=metadata.get("delivery_status", "PENDING_APPROVAL"),
+            delivery_error=metadata.get("delivery_error"),
             steps=steps,
             error=agent_run.error_message,
         )
